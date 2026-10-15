@@ -1,0 +1,2153 @@
+---
+title: "Summer2022_PLE_Plasticity_Anaylsis_V2"
+author: "Trapper Hobble"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, message=FALSE, warning=FALSE, paged.print=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+library(dplyr)
+library(broom)
+library(ggplot2)
+library(ggpubr)
+library(ggsci)
+library(ggeffects)
+library(ggrepel)
+library(reshape2)
+library(scales)
+library(plotrix)
+library(tidyverse)
+library(ggbiplot)
+library(RRPP)
+library(data.table)
+library(nlme)
+library(glmmTMB)
+library(emmeans)
+library(car)
+library(MuMIn)
+library(tidyr)
+library(purrr)
+library(stringr)
+library(patchwork)
+```
+
+```{r}
+#Create dataframes
+Evo<- read.csv("EvoData.csv", fileEncoding="UTF-8-BOM", as.is = TRUE, row.names = NULL)
+
+#Geno colors
+Evo$color<-NA
+Evo$color[which(Evo$Geno=='A')] <- 'royalblue4'
+Evo$color[which(Evo$Geno=='T')] <- 'powderblue'
+Evo$color[which(Evo$Geno=='B')] <- 'forestgreen'
+Evo$color[which(Evo$Geno=='W')] <- 'olivedrab2'
+Evo$color[which(Evo$Geno=='C')] <- 'goldenrod1'
+Evo$color[which(Evo$Geno=='X')] <- 'khaki1'
+Evo$color[which(Evo$Geno=='D')] <- 'sienna2'
+Evo$color[which(Evo$Geno=='Y')] <- 'lightsalmon' 
+Evo$color[which(Evo$Geno=='E')] <- 'firebrick'
+Evo$color[which(Evo$Geno=='Z')] <- 'indianred1'
+Evo$color[which(Evo$Geno=='T1')] <- 'violetred3'
+Evo$color[which(Evo$Geno=='X1')] <- 'palevioletred1'
+Evo$color[which(Evo$Geno=='W3')] <- 'darkmagenta'
+Evo$color[which(Evo$Geno=='Y3')] <- 'mediumorchid1'
+Evo$color[which(Evo$Geno=='Z2')] <- 'chocolate4'
+Evo$color[which(Evo$Geno=='X2')] <- 'tan'
+```
+
+##########################################################################################################
+#################### Relative Growth Rate ####################
+```{r}
+########## GrowthRate=LOG_Final-LOG_Start/Time ###########
+
+# Solo Growth Rates from MONOCULTURES
+Solo_Growth<- read.csv("Summer2022PLE_Solo_FinalFrondCount.csv", fileEncoding="UTF-8-BOM", as.is = TRUE, row.names = NULL)
+
+RGR<- function(x){
+  Final=as.numeric(x[9])
+  Start=as.numeric(x[8])
+  return((log(Final) - log(Start)) / 42)}
+
+#Geno colors
+Solo_Growth$color<-NA
+Solo_Growth$color[which(Solo_Growth$Geno=='A')] <- 'royalblue4'
+Solo_Growth$color[which(Solo_Growth$Geno=='T')] <- 'powderblue'
+Solo_Growth$color[which(Solo_Growth$Geno=='B')] <- 'forestgreen'
+Solo_Growth$color[which(Solo_Growth$Geno=='W')] <- 'olivedrab2'
+Solo_Growth$color[which(Solo_Growth$Geno=='C')] <- 'goldenrod1'
+Solo_Growth$color[which(Solo_Growth$Geno=='X')] <- 'khaki1'
+Solo_Growth$color[which(Solo_Growth$Geno=='D')] <- 'sienna2'
+Solo_Growth$color[which(Solo_Growth$Geno=='Y')] <- 'lightsalmon' 
+Solo_Growth$color[which(Solo_Growth$Geno=='E')] <- 'brown4'
+Solo_Growth$color[which(Solo_Growth$Geno=='Z')] <- 'firebrick2'
+
+Solo_Growth$RGR<-apply(Solo_Growth,1,RGR)
+
+Solo_Growth_Geno <- subset(Solo_Growth, Geno.Number != "Duplicate") 
+
+Solo_GrowthRate_Plot<- ggplot(Solo_Growth_Geno, aes(x = factor(Pair.Number, level=c("1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20")), y = RGR, shape = Treatment, color=color)) +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.3, color="black") + 
+  stat_summary(fun = "mean", geom = "point", size=5) +
+  scale_color_identity() +
+  theme(panel.border=element_blank(), panel.grid.major=element_blank(), panel.grid.minor=element_blank(), axis.line=element_line(colour="black"), panel.background=element_blank(), axis.text.x=element_text(color="black"), axis.text.y=element_text(color="black"))
+plot(Solo_GrowthRate_Plot)
+#ggsave("Solo_GrowthRate_Plot.pdf", width=7)
+#rm(Solo_GrowthRate_Plot)
+
+DIFF_RGR <- Solo_Growth %>%
+  group_by(Pair, Treatment, Geno) %>%
+  dplyr::summarise(Avg_RGR = mean(RGR), .groups = "drop")
+
+DIFF_RGR <- DIFF_RGR %>%
+  group_by(Pair, Treatment) %>%
+  dplyr::summarise(
+    RGR_Diff = abs(diff(Avg_RGR)),  # Assumes only two Genos per group
+    .groups = "drop"
+  )
+
+DIFF_RGR <- DIFF_RGR %>%
+  dplyr::mutate(Pair_Number = row_number())
+
+DIFF_RGR$Pair_color<-NA
+DIFF_RGR$Pair_color[which(DIFF_RGR$Pair=='AT')] <- 'royalblue4'
+DIFF_RGR$Pair_color[which(DIFF_RGR$Pair=='BW')] <- 'forestgreen'
+DIFF_RGR$Pair_color[which(DIFF_RGR$Pair=='CX')] <- 'goldenrod1'
+DIFF_RGR$Pair_color[which(DIFF_RGR$Pair=='DY')] <- 'sienna2'
+DIFF_RGR$Pair_color[which(DIFF_RGR$Pair=='EZ')] <- 'brown4'
+DIFF_RGR$Pair_color[which(DIFF_RGR$Pair=='TX')] <- 'violetred3'
+DIFF_RGR$Pair_color[which(DIFF_RGR$Pair=='WY')] <- 'darkmagenta'
+DIFF_RGR$Pair_color[which(DIFF_RGR$Pair=='ZX')] <- 'chocolate4'
+
+Diff_Pair_GrowthRate_Plot<- ggplot(DIFF_RGR, aes(x = Pair_Number, y = RGR_Diff, fill = Pair_color)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.7), width = 0.6) +
+  scale_fill_identity() +
+  theme(panel.border=element_blank(), panel.grid.major=element_blank(), panel.grid.minor=element_blank(), axis.line=element_line(colour="black"), panel.background=element_blank(), axis.text.x=element_text(color="black"), axis.text.y=element_text(color="black"))
+plot(Diff_Pair_GrowthRate_Plot)  
+
+PW_RGR_ttest <- Solo_Growth %>%
+  group_by(Pair, Treatment) %>%
+  filter(n_distinct(Geno) == 2) %>%  
+  dplyr::summarise(
+    t_test = list(t.test(RGR ~ Geno, data = across(everything()))),
+    .groups = "drop"
+  ) %>%
+  dplyr::mutate(tidy_result = map(t_test, broom::tidy)) %>%
+  unnest(tidy_result) %>%
+  dplyr::select(Pair, Treatment, estimate, statistic, p.value, conf.low, conf.high, method)
+print(PW_RGR_ttest)
+
+AVG_RGR<-Solo_Growth %>%
+    group_by(Geno, Treatment) %>%
+    dplyr::summarise(Avg_RGR = mean(RGR), .groups = "drop")
+print(AVG_RGR)
+```
+
+##########################################################################################################
+#################### AVG TRAIT and AVG PLASTICITY Heatmap for each Media Level ####################
+
+```{r}
+#Create data sets
+Pheno_Traits<- read.csv("Summer2022_PhenoTraitData.csv", fileEncoding="UTF-8-BOM", as.is = TRUE, row.names = NULL)
+
+#Create data sets for Constant vs Fluctuating
+Pheno_Constant_M<- filter(Pheno_Traits,Media=="Constant")
+Pheno_Fluctuating<- filter(Pheno_Traits,Media=="Fluctuating")
+
+#Split Fluctuating DF by week
+#July 20 - After one high nutrient week
+#July 27 - After one low nutrient week
+Pheno_Fluctuating_H<- filter(Pheno_Fluctuating, Date=="20-Jul")
+Pheno_Fluctuating_L<- filter(Pheno_Fluctuating, Date=="27-Jul")
+```
+
+```{r}
+#Calculate Average Trait Values - HIGH NUTRIENTS
+Traits_H<-Pheno_Fluctuating_H %>% 
+  group_by(Geno_Code) %>%
+  dplyr::summarise(across(RootNumber:Antho, ~ mean(.x, na.rm = TRUE)))
+
+Traits_H$Geno_Code <- as.character(Traits_H$Geno_Code)
+Traits_H['Geno_Code'][Traits_H['Geno_Code'] == '1'] <- 'A'
+Traits_H['Geno_Code'][Traits_H['Geno_Code'] == '2'] <- 'T'
+Traits_H['Geno_Code'][Traits_H['Geno_Code'] == '3'] <- 'B'
+Traits_H['Geno_Code'][Traits_H['Geno_Code'] == '4'] <- 'W'
+Traits_H['Geno_Code'][Traits_H['Geno_Code'] == '5'] <- 'C'
+Traits_H['Geno_Code'][Traits_H['Geno_Code'] == '6'] <- 'X'
+Traits_H['Geno_Code'][Traits_H['Geno_Code'] == '7'] <- 'D'
+Traits_H['Geno_Code'][Traits_H['Geno_Code'] == '8'] <- 'Y'
+Traits_H['Geno_Code'][Traits_H['Geno_Code'] == '9'] <- 'E'
+Traits_H['Geno_Code'][Traits_H['Geno_Code'] == '10'] <- 'Z'
+Traits_H['Geno_Code'][Traits_H['Geno_Code'] == '11'] <- 'T1'
+Traits_H['Geno_Code'][Traits_H['Geno_Code'] == '12'] <- 'X1'
+Traits_H['Geno_Code'][Traits_H['Geno_Code'] == '13'] <- 'W3'
+Traits_H['Geno_Code'][Traits_H['Geno_Code'] == '14'] <- 'Y3'
+Traits_H['Geno_Code'][Traits_H['Geno_Code'] == '15'] <- 'X2'
+Traits_H['Geno_Code'][Traits_H['Geno_Code'] == '16'] <- 'Z2'
+names(Traits_H) <- c("Geno", "AVG_H_RootNumber", "AVG_H_RootLength", "AVG_H_SLA", "AVG_H_Chloro", "AVG_H_Antho")
+
+#Calculate Average Trait Values - LOW NUTRIENTS
+Traits_L<-Pheno_Fluctuating_L %>% 
+  group_by(Geno_Code) %>%
+  dplyr::summarise(across(RootNumber:Antho, ~ mean(.x, na.rm = TRUE)))
+
+Traits_L$Geno_Code <- as.character(Traits_L$Geno_Code)
+Traits_L['Geno_Code'][Traits_L['Geno_Code'] == '1'] <- 'A'
+Traits_L['Geno_Code'][Traits_L['Geno_Code'] == '2'] <- 'T'
+Traits_L['Geno_Code'][Traits_L['Geno_Code'] == '3'] <- 'B'
+Traits_L['Geno_Code'][Traits_L['Geno_Code'] == '4'] <- 'W'
+Traits_L['Geno_Code'][Traits_L['Geno_Code'] == '5'] <- 'C'
+Traits_L['Geno_Code'][Traits_L['Geno_Code'] == '6'] <- 'X'
+Traits_L['Geno_Code'][Traits_L['Geno_Code'] == '7'] <- 'D'
+Traits_L['Geno_Code'][Traits_L['Geno_Code'] == '8'] <- 'Y'
+Traits_L['Geno_Code'][Traits_L['Geno_Code'] == '9'] <- 'E'
+Traits_L['Geno_Code'][Traits_L['Geno_Code'] == '10'] <- 'Z'
+Traits_L['Geno_Code'][Traits_L['Geno_Code'] == '11'] <- 'T1'
+Traits_L['Geno_Code'][Traits_L['Geno_Code'] == '12'] <- 'X1'
+Traits_L['Geno_Code'][Traits_L['Geno_Code'] == '13'] <- 'W3'
+Traits_L['Geno_Code'][Traits_L['Geno_Code'] == '14'] <- 'Y3'
+Traits_L['Geno_Code'][Traits_L['Geno_Code'] == '15'] <- 'X2'
+Traits_L['Geno_Code'][Traits_L['Geno_Code'] == '16'] <- 'Z2'
+names(Traits_L) <- c("Geno", "AVG_L_RootNumber", "AVG_L_RootLength", "AVG_L_SLA", "AVG_L_Chloro", "AVG_L_Antho")
+
+#Calculate Average Trait Values - MEDIUM NUTRIENTS
+Traits_M<-Pheno_Constant_M %>% 
+  group_by(Geno_Code) %>%
+  dplyr::summarise(across(RootNumber:Antho, ~ mean(.x, na.rm = TRUE)))
+
+Traits_M$Geno_Code <- as.character(Traits_M$Geno_Code)
+Traits_M['Geno_Code'][Traits_M['Geno_Code'] == '1'] <- 'A'
+Traits_M['Geno_Code'][Traits_M['Geno_Code'] == '2'] <- 'T'
+Traits_M['Geno_Code'][Traits_M['Geno_Code'] == '3'] <- 'B'
+Traits_M['Geno_Code'][Traits_M['Geno_Code'] == '4'] <- 'W'
+Traits_M['Geno_Code'][Traits_M['Geno_Code'] == '5'] <- 'C'
+Traits_M['Geno_Code'][Traits_M['Geno_Code'] == '6'] <- 'X'
+Traits_M['Geno_Code'][Traits_M['Geno_Code'] == '7'] <- 'D'
+Traits_M['Geno_Code'][Traits_M['Geno_Code'] == '8'] <- 'Y'
+Traits_M['Geno_Code'][Traits_M['Geno_Code'] == '9'] <- 'E'
+Traits_M['Geno_Code'][Traits_M['Geno_Code'] == '10'] <- 'Z'
+Traits_M['Geno_Code'][Traits_M['Geno_Code'] == '11'] <- 'T1'
+Traits_M['Geno_Code'][Traits_M['Geno_Code'] == '12'] <- 'X1'
+Traits_M['Geno_Code'][Traits_M['Geno_Code'] == '13'] <- 'W3'
+Traits_M['Geno_Code'][Traits_M['Geno_Code'] == '14'] <- 'Y3'
+Traits_M['Geno_Code'][Traits_M['Geno_Code'] == '15'] <- 'X2'
+Traits_M['Geno_Code'][Traits_M['Geno_Code'] == '16'] <- 'Z2'
+names(Traits_M) <- c("Geno", "AVG_M_RootNumber", "AVG_M_RootLength", "AVG_M_SLA", "AVG_M_Chloro", "AVG_M_Antho")
+```
+
+```{r}
+# OVERALL Plasticity by Euclidean Distance - Fluctuating 
+# Scale all trait values
+Pheno_Traits_F <- Pheno_Fluctuating %>%
+  mutate(across(c(RootNumber, RootLength, SLA, Chloro, Antho), ~ as.numeric(scale(.))))
+
+# Keep Geno info
+Pheno_Traits_F <- Pheno_Traits_F %>%
+  select(Unique_Bot_Geno, Geno, Date, RootNumber, RootLength, SLA, Chloro, Antho)
+
+# Pivot wide
+Pheno_Traits_F <- Pheno_Traits_F %>%
+  pivot_wider(id_cols = c(Unique_Bot_Geno, Geno), names_from = Date, values_from = c(RootNumber, RootLength, SLA, Chloro, Antho), names_glue = "{.value}_{Date}")
+
+# Compute Euclidean distance between 20-Jul and 27-Jul for each bottle
+Plasticity_Dist_F <- Pheno_Traits_F %>%
+  dplyr::mutate(Plasticity_Dist = pmap_dbl(list(
+        .data[["RootNumber_20-Jul"]], .data[["RootLength_20-Jul"]], .data[["SLA_20-Jul"]],
+        .data[["Chloro_20-Jul"]], .data[["Antho_20-Jul"]],
+        .data[["RootNumber_27-Jul"]], .data[["RootLength_27-Jul"]], .data[["SLA_27-Jul"]],
+        .data[["Chloro_27-Jul"]], .data[["Antho_27-Jul"]]),
+        ~ {x <- c(..1, ..2, ..3, ..4, ..5); 
+        y <- c(..6, ..7, ..8, ..9, ..10); 
+        sqrt(sum((x - y)^2, na.rm = TRUE))}))
+
+# Total plasticity for each Geno
+Plasticity_by_Geno <- Plasticity_Dist_F %>%
+  group_by(Geno) %>%
+  dplyr::summarise(Mean_Plast_Dist_F = mean(Plasticity_Dist, na.rm = TRUE), .groups = "drop")
+
+##########################################################################################################
+# Plasticity by Euclidean Distance - Constant 
+# Scale all trait values
+Pheno_Traits_C <- Pheno_Constant_M %>%
+  dplyr::mutate(across(c(RootNumber, RootLength, SLA, Chloro, Antho), ~ as.numeric(scale(.))))
+
+# Keep Geno info
+Pheno_Traits_C <- Pheno_Traits_C %>%
+  dplyr::select(Unique_Bot_Geno, Geno, Date, RootNumber, RootLength, SLA, Chloro, Antho)
+
+# Pivot wide
+Pheno_Traits_C <- Pheno_Traits_C %>%
+  pivot_wider(id_cols = c(Unique_Bot_Geno, Geno), names_from = Date, values_from = c(RootNumber, RootLength, SLA, Chloro, Antho), names_glue = "{.value}_{Date}")
+
+# Compute Euclidean distance between 20-Jul and 27-Jul for each bottle
+Plasticity_Dist_C <- Pheno_Traits_C %>%
+  dplyr::mutate(Plasticity_Dist = pmap_dbl(list(
+        .data[["RootNumber_20-Jul"]], .data[["RootLength_20-Jul"]], .data[["SLA_20-Jul"]],
+        .data[["Chloro_20-Jul"]], .data[["Antho_20-Jul"]],
+        .data[["RootNumber_27-Jul"]], .data[["RootLength_27-Jul"]], .data[["SLA_27-Jul"]],
+        .data[["Chloro_27-Jul"]], .data[["Antho_27-Jul"]]),
+        ~ {x <- c(..1, ..2, ..3, ..4, ..5); 
+        y <- c(..6, ..7, ..8, ..9, ..10); 
+        sqrt(sum((x - y)^2, na.rm = TRUE))}))
+
+# Total plasticity for each Geno
+Plasticity_by_Geno <- Plasticity_by_Geno %>%
+  left_join(Plasticity_Dist_C %>%
+      group_by(Geno) %>%
+      dplyr::summarise(Mean_Plast_Dist_C = mean(Plasticity_Dist, na.rm = TRUE), .groups = "drop"), by = "Geno")
+```
+
+
+```{r}
+#Calculate Average TRAIT Plasticity Values - FLUCTUATING
+Plasticity_F<-Pheno_Fluctuating %>% 
+  group_by(Unique_Bot_Geno) %>%
+  summarise(across(RootNumber:Antho, ~ diff(.x, na.rm = TRUE)))
+Plasticity_F<-Plasticity_F %>% separate(Unique_Bot_Geno, c('Rack', 'Cell','Geno'))
+Plasticity_F<-Plasticity_F %>% 
+  group_by(Geno) %>%
+  summarise(across(RootNumber:Antho, ~ mean(.x, na.rm = TRUE)))
+names(Plasticity_F) <- c("Geno", "AVG_PLAST_F_RootNumber", "AVG_PLAST_F_RootLength", "AVG_PLAST_F_SLA", "AVG_PLAST_F_Chloro", "AVG_PLAST_F_Antho")
+Plasticity_F$AVG_PLAST_F_RootNumber<-abs(Plasticity_F$AVG_PLAST_F_RootNumber)
+Plasticity_F$AVG_PLAST_F_RootLength<-abs(Plasticity_F$AVG_PLAST_F_RootLength)
+Plasticity_F$AVG_PLAST_F_SLA<-abs(Plasticity_F$AVG_PLAST_F_SLA)
+Plasticity_F$AVG_PLAST_F_Chloro<-abs(Plasticity_F$AVG_PLAST_F_Chloro)
+Plasticity_F$AVG_PLAST_F_Antho<-abs(Plasticity_F$AVG_PLAST_F_Antho)
+
+#Calculate Average PLASTICITY Values - CONSTANT
+Plasticity_C<-Pheno_Constant_M %>% 
+  group_by(Unique_Bot_Geno) %>%
+  summarise(across(RootNumber:Antho, ~ diff(.x, na.rm = TRUE)))
+Plasticity_C<-Plasticity_C %>% separate(Unique_Bot_Geno, c('Rack', 'Cell','Geno'))
+Plasticity_C<-Plasticity_C %>% 
+  group_by(Geno) %>%
+  summarise(across(RootNumber:Antho, ~ mean(.x, na.rm = TRUE)))
+names(Plasticity_C) <- c("Geno", "AVG_PLAST_C_RootNumber", "AVG_PLAST_C_RootLength", "AVG_PLAST_C_SLA", "AVG_PLAST_C_Chloro", "AVG_PLAST_C_Antho")
+Plasticity_C$AVG_PLAST_C_RootNumber<-abs(Plasticity_C$AVG_PLAST_C_RootNumber)
+Plasticity_C$AVG_PLAST_C_RootLength<-abs(Plasticity_C$AVG_PLAST_C_RootLength)
+Plasticity_C$AVG_PLAST_C_SLA<-abs(Plasticity_C$AVG_PLAST_C_SLA)
+Plasticity_C$AVG_PLAST_C_Chloro<-abs(Plasticity_C$AVG_PLAST_C_Chloro)
+Plasticity_C$AVG_PLAST_C_Antho<-abs(Plasticity_C$AVG_PLAST_C_Antho)
+
+Trait_Plasticity<-list(Traits_L,Traits_M,Traits_H,Plasticity_F,Plasticity_C,Plasticity_by_Geno)
+Trait_Plasticity<-Trait_Plasticity %>% reduce(full_join, by='Geno')
+
+Trait_Plasticity$Pair <- rep(1:8, each = 2)
+
+Trait_Plasticity <- Trait_Plasticity %>%
+  group_by(Pair) %>%
+  mutate(
+    Pairwise_Diff_Mean_Plast_Dist_F = abs(diff(Mean_Plast_Dist_F)[1])
+  ) %>%
+  ungroup()
+
+Trait_Plasticity <- Trait_Plasticity %>%
+  group_by(Pair) %>%
+  mutate(
+    Pairwise_Diff_Mean_Plast_Dist_F = abs(diff(Mean_Plast_Dist_F)[1]),
+    Pairwise_Diff_Mean_Plast_Dist_C = abs(diff(Mean_Plast_Dist_C)[1])
+  ) %>%
+  ungroup()
+```
+
+```{r message=FALSE, warning=FALSE}
+rm(Pheno_Constant_M)
+rm(Pheno_Fluctuating)
+rm(Pheno_Fluctuating_H)
+rm(Pheno_Fluctuating_L)
+rm(Traits_H)
+rm(Traits_M)
+rm(Traits_L)
+rm(Plasticity_C)
+rm(Plasticity_F)
+rm(Plasticity_by_Geno)
+rm(Pheno_Traits_C)
+rm(Pheno_Traits_F)
+rm(Plasticity_Dist_C)
+rm(Plasticity_Dist_F)
+```
+
+```{r warning=FALSE}
+Trait_Plasticity_Heatmap<-melt(Trait_Plasticity)
+Trait_Plasticity_Heatmap <- Trait_Plasticity_Heatmap %>%
+  group_by(variable) %>%
+  mutate(rescale = scales::rescale(value, to = c(0, 1))) %>%
+  ungroup()
+
+Trait_Plasticity_HM <- Trait_Plasticity_Heatmap %>%
+  mutate(Geno = factor(Geno, levels = c("A","T","B","W","C","X","D","Y","E","Z","T1","X1","W3","Y3","Z2","X2"))) %>%
+  ggplot(aes(x = Geno, y = variable)) +
+    geom_tile(aes(fill = rescale), colour = "black") +
+    scale_fill_gradient(low = "white", high = "darkblue") +
+    coord_fixed()
+plot(Trait_Plasticity_HM)
+#ggsave("Trait_Plasticity_HM.pdf")
+rm(Trait_Plasticity_Heatmap)
+rm(Trait_Plasticity_HM)
+```
+
+```{r}
+#Add in multivariate plasticiy metric to Evo data frames
+Evo_Plast<- merge(Evo, Trait_Plasticity, by = "Geno")
+
+Evo_Plast <- Evo_Plast %>%
+  group_by(Index) %>%
+  dplyr::mutate(Higher_Plast_F = case_when(
+    n() == 2 & Mean_Plast_Dist_F == max(Mean_Plast_Dist_F) ~ "H",
+    n() == 2 & Mean_Plast_Dist_F == min(Mean_Plast_Dist_F) ~ "L",
+    TRUE ~ "Tie"  # in case values are equal or group isn't of size 2
+  )) %>%
+  ungroup()
+
+Evo_Plast <- Evo_Plast %>%
+  group_by(Index) %>%
+  dplyr::mutate(Higher_Plast_C = case_when(
+    n() == 2 & Mean_Plast_Dist_C == max(Mean_Plast_Dist_C) ~ "H",
+    n() == 2 & Mean_Plast_Dist_C == min(Mean_Plast_Dist_C) ~ "L",
+    TRUE ~ "Tie"  # in case values are equal or group isn't of size 2
+  )) %>%
+  ungroup()
+
+Evo_Plast <- Evo_Plast %>%
+  dplyr::mutate(PlastRank = case_when(
+    Media == "Constant" ~ as.character(Higher_Plast_C),     # or use factor() for ordered shapes
+    Media == "Fluctuating" ~ as.character(Higher_Plast_F),
+    TRUE ~ NA_character_
+  ))
+
+Evo_Plast <- Evo_Plast %>%
+  dplyr::mutate(BaseGeno = gsub("\\d+$", "", Geno))
+
+Growth_Avg <- Solo_Growth %>%
+  group_by(Geno) %>%
+  dplyr::summarise(AVG_RGR = mean(RGR, na.rm = TRUE), .groups = "drop")
+
+Evo_Plast <- Evo_Plast %>%
+  left_join(Growth_Avg, by = c("BaseGeno" = "Geno"))
+
+Evo_Plast <- Evo_Plast %>%
+  left_join(Evo_Fronds %>%
+      select(Geno, Treatment, Evo_RGR),by = c("Geno", "Media" = "Treatment"))
+
+Evo_Plast <- Evo_Plast %>% select(-BaseGeno)
+
+Evo_Plast$Color<-NA
+Evo_Plast$Color[which(Evo_Plast$Geno=='A')] <- 'royalblue4'
+Evo_Plast$Color[which(Evo_Plast$Geno=='T')] <- 'powderblue'
+Evo_Plast$Color[which(Evo_Plast$Geno=='B')] <- 'forestgreen'
+Evo_Plast$Color[which(Evo_Plast$Geno=='W')] <- 'olivedrab2'
+Evo_Plast$Color[which(Evo_Plast$Geno=='C')] <- 'goldenrod1'
+Evo_Plast$Color[which(Evo_Plast$Geno=='X')] <- 'khaki1'
+Evo_Plast$Color[which(Evo_Plast$Geno=='D')] <- 'sienna2'
+Evo_Plast$Color[which(Evo_Plast$Geno=='Y')] <- 'lightsalmon' 
+Evo_Plast$Color[which(Evo_Plast$Geno=='E')] <- 'firebrick'
+Evo_Plast$Color[which(Evo_Plast$Geno=='Z')] <- 'indianred1'
+Evo_Plast$Color[which(Evo_Plast$Geno=='T1')] <- 'violetred3'
+Evo_Plast$Color[which(Evo_Plast$Geno=='X1')] <- 'palevioletred1'
+Evo_Plast$Color[which(Evo_Plast$Geno=='W3')] <- 'darkmagenta'
+Evo_Plast$Color[which(Evo_Plast$Geno=='Y3')] <- 'mediumorchid1'
+Evo_Plast$Color[which(Evo_Plast$Geno=='Z2')] <- 'chocolate4'
+Evo_Plast$Color[which(Evo_Plast$Geno=='X2')] <- 'tan'
+
+rm(Growth_Avg)
+```
+
+##########################################################################################################
+#################### Phenotypic Trajectory Analysis ####################
+```{r}
+#Create dataframe
+Pheno_Traits<- read.csv("Summer2022_PhenoTraitData.csv", fileEncoding="UTF-8-BOM", as.is = TRUE, row.names = NULL)
+
+#Scale trait data
+Pheno_Traits$RootNumber <- as.vector(scale(Pheno_Traits$RootNumber))
+Pheno_Traits$RootLength <- as.vector(scale(Pheno_Traits$RootLength))
+Pheno_Traits$SLA <- as.vector(scale(Pheno_Traits$SLA))
+Pheno_Traits$Chloro <- as.vector(scale(Pheno_Traits$Chloro))
+Pheno_Traits$Antho <- as.vector(scale(Pheno_Traits$Antho))
+
+Pheno_Trait<- subset(Pheno_Traits, select=c(10,1,13:17))
+
+#Remove 2 rows with missing values
+Pheno_Traits <- Pheno_Traits %>%
+  group_by(Unique_Bot_Geno) %>%
+  filter(all(complete.cases(
+    RootNumber,
+    RootLength,
+    SLA,
+    Chloro,
+    Antho
+  ))) %>%
+  ungroup()
+
+#Create data sets for change in trait by bottle for RRPP
+Pheno_Traits<- Pheno_Traits %>%
+  arrange(Unique_Bot_Geno, Date) %>%
+  group_by(Unique_Bot_Geno) %>%
+  mutate(PLAST_RootNumber = RootNumber - lag(RootNumber)) %>%
+  mutate(PLAST_RootLength = RootLength - lag(RootLength)) %>%
+  mutate(PLAST_SLA = SLA - lag(SLA)) %>%
+  mutate(PLAST_Chloro = Chloro - lag(Chloro)) %>%
+  mutate(PLAST_Antho = Antho - lag(Antho))
+
+#Create data sets for average trait by bottle for RRPP
+Pheno_Traits<- Pheno_Traits %>%
+  arrange(Unique_Bot_Geno, Date) %>%
+  group_by(Unique_Bot_Geno) %>%
+  mutate(AVG_RootNumber = (RootNumber + lag(RootNumber))/2) %>%
+  mutate(AVG_RootLength = (RootLength + lag(RootLength))/2) %>%
+  mutate(AVG_SLA = (SLA + lag(SLA))/2) %>%
+  mutate(AVG_Chloro = (Chloro + lag(Chloro))/2) %>%
+  mutate(AVG_Antho = (Antho + lag(Antho))/2)
+
+Pheno_Traits <- Pheno_Traits %>%
+  filter(!is.na(PLAST_RootNumber))
+
+diff_lookup <- Trait_Plasticity %>%
+  select(Geno, 
+         Pairwise_Diff_Mean_Plast_Dist_C, 
+         Pairwise_Diff_Mean_Plast_Dist_F) %>%
+  distinct()
+
+Pheno_Traits <- Pheno_Traits %>%
+  left_join(diff_lookup, by = "Geno") %>%
+  mutate(
+    Pairwise_Diff = case_when(
+      Media == "Constant" ~ Pairwise_Diff_Mean_Plast_Dist_C,
+      Media == "Fluctuating" ~ Pairwise_Diff_Mean_Plast_Dist_F,
+      TRUE ~ NA_real_
+    ))
+
+trait_lookup <- Pheno_Traits %>%
+  select(Unique_Bot_Geno, Unique_Geno_Media, AVG_RootNumber,AVG_RootLength,AVG_SLA,AVG_Chloro,AVG_Antho) %>%
+  distinct()
+
+trait_lookup <- trait_lookup[, -1]
+
+trait_lookup <- trait_lookup %>%
+  ungroup() %>%
+  group_by(Unique_Geno_Media) %>%
+  summarise(AVG_RootNumber = mean(AVG_RootNumber, na.rm = TRUE),AVG_RootLength = mean(AVG_RootLength, na.rm = TRUE),
+    AVG_SLA = mean(AVG_SLA, na.rm = TRUE),AVG_Chloro = mean(AVG_Chloro, na.rm = TRUE),AVG_Antho = mean(AVG_Antho, na.rm = TRUE),.groups = "drop")
+
+Evo_Plast <- Evo_Plast %>%
+  left_join(trait_lookup, by = "Unique_Geno_Media") 
+
+rm(diff_lookup)
+rm(trait_lookup)
+
+Pheno_Plast<- subset(Pheno_Traits, select=c(7,9,18:22,30))
+```
+
+```{r}
+#################### PLASTICITY Phenotypic Trajectory Analysis with RRPP ####################
+#Create trait response matrix
+Plast<-as.matrix(cbind(Pheno_Plast$PLAST_RootNumber,Pheno_Plast$PLAST_RootLength,Pheno_Plast$PLAST_SLA,Pheno_Plast$PLAST_Chloro,Pheno_Plast$PLAST_Antho))
+colnames(Plast) <- c("RootNumber", "RootLength", "SLA", "Chloro", "Antho")
+
+#Create RRPP data frame
+Plast_Data<-rrpp.data.frame(Geno=as.factor(Pheno_Plast$Geno),
+                            Media=as.factor(Pheno_Plast$Media),
+                            Pairwise_Plast_Diff=as.numeric(Pheno_Plast$Pairwise_Diff),
+                            Plast= Plast)
+
+Mod1<-lm.rrpp(Plast~Media*Geno, data=Plast_Data, turbo=FALSE, verbose=TRUE, SS.type = "I", iter=10000)
+
+
+summary(Mod1, formula = FALSE)
+anova(Mod1, effect.type = "F", error = c("Residuals", "Geno", "Geno"))
+
+coef(Mod1, test=TRUE)
+
+PWT <- pairwise(Mod1, groups = Mod1$LM$data$Media)
+
+plot.lm.rrpp(Mod1, type="PC", col = factor(Mod1$LM$data$Geno))
+
+PlotData <- plot(Mod1, type = "PC", col = factor(Mod1$LM$data$Geno))
+
+prcomp(fitted.values(Mod1), scale. = FALSE)$rotation
+
+fitted_vals <- fitted.values(Mod1)
+pca_result <- prcomp(fitted_vals, scale. = FALSE)
+pca_result$rotation
+
+loadings <- as.data.frame(pca_result$rotation[, 1:2])
+loadings$Trait <- rownames(loadings)
+```
+
+```{r}
+#################### TRAIT Phenotypic Trajectory Analysis with RRPP ####################
+#Create trait response matrix
+Traits<-as.matrix(cbind(Pheno_Traits$AVG_RootNumber,Pheno_Traits$AVG_RootLength,Pheno_Traits$AVG_SLA,Pheno_Traits$AVG_Chloro,Pheno_Traits$AVG_Antho))
+colnames(Traits) <- c("RootNumber", "RootLength", "SLA", "Chloro", "Antho")
+
+#Create RRPP data frame
+Trait_Data<-rrpp.data.frame(Geno=as.factor(Pheno_Traits$Geno),
+                            Media=as.factor(Pheno_Traits$Media),
+                            Traits= Traits)
+
+Mod2<-lm.rrpp(Traits~Media*Geno, data=Trait_Data, turbo=FALSE, verbose=TRUE, SS.type = "I", iter=10000)
+
+summary(Mod2, formula = FALSE)
+anova(Mod2, effect.type = "F", error = c("Residuals", "Geno", "Geno"))
+
+coef(Mod2, test=TRUE)
+
+PWT2 <- pairwise(Mod2, groups = Mod2$LM$data$Media)
+
+plot.lm.rrpp(Mod2, type="PC", col = factor(Mod2$LM$data$Geno))
+
+PlotData2 <- plot(Mod2, type = "PC", col = factor(Mod2$LM$data$Geno))
+
+prcomp(fitted.values(Mod2), scale. = FALSE)$rotation
+
+fitted_vals2 <- fitted.values(Mod2)
+pca_result2 <- prcomp(fitted_vals2, scale. = FALSE)
+pca_result2$rotation
+
+loadings2 <- as.data.frame(pca_result2$rotation[, 1:2])
+loadings2$Trait <- rownames(loadings2)
+```
+
+```{r message=FALSE, warning=FALSE}
+# PLASTICITY Trajactory analysis
+TA <- trajectory.analysis(Mod1, groups = Mod1$LM$data$Geno,traj.pts = Mod1$LM$data$Media, print.progress = FALSE)
+
+MD.summary <- summary(TA, attribute="MD")                       # Magnitude difference
+MD.summary <- as.data.frame(MD.summary$summary.table)
+
+colnames(MD.summary) <- c("Obs_Mag_Diff", "MD_Upper_95_CI", "MD_Z_Score", "MD_P_Value")
+MD.summary$Pair <- rownames(MD.summary)
+MD.summary <- MD.summary[, c("Pair", "Obs_Mag_Diff", "MD_Upper_95_CI", "MD_Z_Score", "MD_P_Value")]
+rownames(MD.summary) <- NULL
+
+TC.summary <- summary(TA, attribute="TC", angle.type="deg")     # Trajectory correlation (as angle in degrees)
+TC.summary <- as.data.frame(TC.summary$summary.table)
+
+colnames(TC.summary) <- c("Traj_Correlation", "TC_angle", "TC_Upper_95_CI", "TC_Z_Score", "TC_P_Value")
+TC.summary$Pair <- rownames(TC.summary)
+TC.summary <- TC.summary[, c("Pair", "Traj_Correlation", "TC_angle", "TC_Upper_95_CI", "TC_Z_Score", "TC_P_Value")]
+rownames(TC.summary) <- NULL
+
+TA.summary <- merge(MD.summary, TC.summary, by = "Pair")
+
+TA.summary <- dplyr::filter(TA.summary, Pair %in% c("A:T", "B:W", "C:X", "D:Y", "E:Z", "T1:X1", "W3:Y3", "X2:Z2"))
+
+TP <- plot(TA, pch = 21, bg = as.numeric(Mod1$LM$data$Geno),cex = 0.7) 
+add.trajectories(TP, traj.pch = 21, start.bg = 1, end.bg = 2)
+
+rm(TC.summary)
+rm(MD.summary)
+```
+
+```{r message=FALSE, warning=FALSE}
+# TRAIT Trajactory analysis
+TA2 <- trajectory.analysis(Mod2, groups = Mod2$LM$data$Geno,traj.pts = Mod2$LM$data$Media, print.progress = FALSE)
+
+MD.summary2 <- summary(TA2, attribute="MD")                       # Magnitude difference
+MD.summary2 <- as.data.frame(MD.summary2$summary.table)
+
+colnames(MD.summary2) <- c("Obs_Mag_Diff", "MD_Upper_95_CI", "MD_Z_Score", "MD_P_Value")
+MD.summary2$Pair <- rownames(MD.summary2)
+MD.summary2 <- MD.summary2[, c("Pair", "Obs_Mag_Diff", "MD_Upper_95_CI", "MD_Z_Score", "MD_P_Value")]
+rownames(MD.summary2) <- NULL
+
+TC.summary2 <- summary(TA2, attribute="TC", angle.type="deg")     # Trajectory correlation (as angle in degrees)
+TC.summary2 <- as.data.frame(TC.summary2$summary.table)
+
+colnames(TC.summary2) <- c("Traj_Correlation", "TC_angle", "TC_Upper_95_CI", "TC_Z_Score", "TC_P_Value")
+TC.summary2$Pair <- rownames(TC.summary2)
+TC.summary2 <- TC.summary2[, c("Pair", "Traj_Correlation", "TC_angle", "TC_Upper_95_CI", "TC_Z_Score", "TC_P_Value")]
+rownames(TC.summary2) <- NULL
+
+TA.summary2 <- merge(MD.summary2, TC.summary2, by = "Pair")
+
+TA.summary2 <- dplyr::filter(TA.summary2, Pair %in% c("A:T", "B:W", "C:X", "D:Y", "E:Z", "T1:X1", "W3:Y3", "X2:Z2"))
+
+TP2 <- plot(TA2, pch = 21, bg = as.numeric(Mod2$LM$data$Geno),cex = 0.7) 
+add.trajectories(TP2, traj.pch = 21, start.bg = 1, end.bg = 2)
+
+rm(TC.summary2)
+rm(MD.summary2)
+```
+
+```{r message=FALSE, warning=FALSE}
+#Extract PLAST PC to use in ggplot
+PCPlotDF_Plast <- tibble(PC1 = PlotData$plot_args$x,
+                   PC2 = PlotData$plot_args$y,
+                   Geno = PlotData$plot_args$col)
+PCPlotDF_Plast$Media<-Mod1$LM$data$Media
+
+PCPlotDF_Plast$Color<-NA
+PCPlotDF_Plast$Color[which(PCPlotDF_Plast$Geno=='A')] <- 'royalblue4'
+PCPlotDF_Plast$Color[which(PCPlotDF_Plast$Geno=='T')] <- 'powderblue'
+PCPlotDF_Plast$Color[which(PCPlotDF_Plast$Geno=='B')] <- 'forestgreen'
+PCPlotDF_Plast$Color[which(PCPlotDF_Plast$Geno=='W')] <- 'olivedrab2'
+PCPlotDF_Plast$Color[which(PCPlotDF_Plast$Geno=='C')] <- 'goldenrod1'
+PCPlotDF_Plast$Color[which(PCPlotDF_Plast$Geno=='X')] <- 'khaki1'
+PCPlotDF_Plast$Color[which(PCPlotDF_Plast$Geno=='D')] <- 'sienna2'
+PCPlotDF_Plast$Color[which(PCPlotDF_Plast$Geno=='Y')] <- 'lightsalmon' 
+PCPlotDF_Plast$Color[which(PCPlotDF_Plast$Geno=='E')] <- 'firebrick'
+PCPlotDF_Plast$Color[which(PCPlotDF_Plast$Geno=='Z')] <- 'indianred1'
+
+PCPlotDF_Plast$Color[which(PCPlotDF_Plast$Geno=='T1')] <- 'violetred3'
+PCPlotDF_Plast$Color[which(PCPlotDF_Plast$Geno=='X1')] <- 'palevioletred1'
+PCPlotDF_Plast$Color[which(PCPlotDF_Plast$Geno=='Z2')] <- 'darkmagenta'
+PCPlotDF_Plast$Color[which(PCPlotDF_Plast$Geno=='X2')] <- 'mediumorchid1'
+PCPlotDF_Plast$Color[which(PCPlotDF_Plast$Geno=='W3')] <- 'chocolate4'
+PCPlotDF_Plast$Color[which(PCPlotDF_Plast$Geno=='Y3')] <- 'tan'
+
+mult_plast <- min(
+  max(abs(PCPlotDF_Plast$PC1)) / max(abs(loadings$PC1)),
+  max(abs(PCPlotDF_Plast$PC2)) / max(abs(loadings$PC2))
+) * 0.8
+
+loadings$PC1_scaled <- loadings$PC1 * mult_plast
+loadings$PC2_scaled <- loadings$PC2 * mult_plast
+
+loadings$PC1_label <- loadings$PC1_scaled * 1.1
+loadings$PC2_label <- loadings$PC2_scaled * 1.1
+
+#Extract TA coordinates and make them plotable
+TrajDF_Plast<-as.data.frame(TP$trajectories)
+#TrajDF_Plast<-data.frame(matrix(ncol = 4, nrow=80))
+#TrajDF_Plast<-TrajDF_Plast %>% rename(Geno = X1, Media = X2, PC1 = X3, PC2=X4)
+
+TrajDF_Plast <- TrajDF_Plast %>%
+  select(matches("\\.PC[12]$"))
+
+TrajDF_Plast$Sample <- rownames(TrajDF_Plast)
+
+TrajDF_Plast <- TrajDF_Plast %>%
+  pivot_longer(cols = -Sample, names_to = "Geno_PC", values_to = "Score")
+
+TrajDF_Plast <- TrajDF_Plast %>%
+  separate(Geno_PC, into = c("Geno", "PC"), sep = "\\.")
+
+TrajDF_Plast <- TrajDF_Plast %>%
+  separate(Sample, into = c("SampleGeno", "Media"), sep = "\\.")
+
+TrajDF_Plast <- TrajDF_Plast %>% select(-SampleGeno)
+
+TrajDF_Plast <- TrajDF_Plast %>%
+  select(Geno, Media, PC, Score) %>%
+  pivot_wider(names_from = PC, values_from = Score)
+
+TrajDF_Plast$Color<-NA
+TrajDF_Plast$Color[which(TrajDF_Plast$Geno=='A')] <- 'royalblue4'
+TrajDF_Plast$Color[which(TrajDF_Plast$Geno=='T')] <- 'powderblue'
+TrajDF_Plast$Color[which(TrajDF_Plast$Geno=='B')] <- 'forestgreen'
+TrajDF_Plast$Color[which(TrajDF_Plast$Geno=='W')] <- 'olivedrab2'
+TrajDF_Plast$Color[which(TrajDF_Plast$Geno=='C')] <- 'goldenrod1'
+TrajDF_Plast$Color[which(TrajDF_Plast$Geno=='X')] <- 'khaki1'
+TrajDF_Plast$Color[which(TrajDF_Plast$Geno=='D')] <- 'sienna2'
+TrajDF_Plast$Color[which(TrajDF_Plast$Geno=='Y')] <- 'lightsalmon' 
+TrajDF_Plast$Color[which(TrajDF_Plast$Geno=='E')] <- 'firebrick'
+TrajDF_Plast$Color[which(TrajDF_Plast$Geno=='Z')] <- 'indianred1'
+
+TrajDF_Plast$Color[which(TrajDF_Plast$Geno=='T1')] <- 'violetred3'
+TrajDF_Plast$Color[which(TrajDF_Plast$Geno=='X1')] <- 'palevioletred1'
+TrajDF_Plast$Color[which(TrajDF_Plast$Geno=='Z2')] <- 'darkmagenta'
+TrajDF_Plast$Color[which(TrajDF_Plast$Geno=='X2')] <- 'mediumorchid1'
+TrajDF_Plast$Color[which(TrajDF_Plast$Geno=='W3')] <- 'chocolate4'
+TrajDF_Plast$Color[which(TrajDF_Plast$Geno=='Y3')] <- 'tan'
+
+TrajDF_Plast <- left_join(TrajDF_Plast, Evo_Plast %>% select(Geno, Media, PlastRank), 
+                       by = c("Geno", "Media"))
+
+TrajDF_Plast <- TrajDF_Plast[!duplicated(TrajDF_Plast), ]
+
+TrajDF_Plast_wide <- TrajDF_Plast %>%
+  select(Geno, Media, PC1, PC2, PlastRank, Color) %>%
+  pivot_wider(
+    names_from = Media,
+    values_from = c(PC1, PC2, PlastRank)
+  ) %>%
+  filter(!is.na(PC1_Constant), !is.na(PC1_Fluctuating))
+
+PLAST_TrajLengths<-as.data.frame(TA$PD$obs)
+
+PLAST_TrajLengths <- data.frame(
+  Geno = names(TA$PD$obs),
+  PLAST_TrajLengths = as.numeric(TA$PD$obs))
+
+Evo_Plast <- Evo_Plast %>%
+  left_join(PLAST_TrajLengths, by = "Geno")
+
+rm(PLAST_TrajLengths)
+```
+
+```{r message=FALSE, warning=FALSE}
+#Extract TRAIT PC to use in ggplot
+PCPlotDF2_Traits <- tibble(PC1 = PlotData2$plot_args$x,
+                   PC2 = PlotData2$plot_args$y,
+                   Geno = PlotData2$plot_args$col)
+PCPlotDF2_Traits$Media<-Mod2$LM$data$Media
+
+PCPlotDF2_Traits$Color<-NA
+PCPlotDF2_Traits$Color[which(PCPlotDF2_Traits$Geno=='A')] <- 'royalblue4'
+PCPlotDF2_Traits$Color[which(PCPlotDF2_Traits$Geno=='T')] <- 'powderblue'
+PCPlotDF2_Traits$Color[which(PCPlotDF2_Traits$Geno=='B')] <- 'forestgreen'
+PCPlotDF2_Traits$Color[which(PCPlotDF2_Traits$Geno=='W')] <- 'olivedrab2'
+PCPlotDF2_Traits$Color[which(PCPlotDF2_Traits$Geno=='C')] <- 'goldenrod1'
+PCPlotDF2_Traits$Color[which(PCPlotDF2_Traits$Geno=='X')] <- 'khaki1'
+PCPlotDF2_Traits$Color[which(PCPlotDF2_Traits$Geno=='D')] <- 'sienna2'
+PCPlotDF2_Traits$Color[which(PCPlotDF2_Traits$Geno=='Y')] <- 'lightsalmon' 
+PCPlotDF2_Traits$Color[which(PCPlotDF2_Traits$Geno=='E')] <- 'firebrick'
+PCPlotDF2_Traits$Color[which(PCPlotDF2_Traits$Geno=='Z')] <- 'indianred1'
+
+PCPlotDF2_Traits$Color[which(PCPlotDF2_Traits$Geno=='T1')] <- 'violetred3'
+PCPlotDF2_Traits$Color[which(PCPlotDF2_Traits$Geno=='X1')] <- 'palevioletred1'
+PCPlotDF2_Traits$Color[which(PCPlotDF2_Traits$Geno=='Z2')] <- 'darkmagenta'
+PCPlotDF2_Traits$Color[which(PCPlotDF2_Traits$Geno=='X2')] <- 'mediumorchid1'
+PCPlotDF2_Traits$Color[which(PCPlotDF2_Traits$Geno=='W3')] <- 'chocolate4'
+PCPlotDF2_Traits$Color[which(PCPlotDF2_Traits$Geno=='Y3')] <- 'tan'
+
+# Add loadings for plotting
+mult_trait <- min(
+  max(abs(PCPlotDF2_Traits$PC1)) / max(abs(loadings2$PC1)),
+  max(abs(PCPlotDF2_Traits$PC2)) / max(abs(loadings2$PC2))
+) * 0.8
+
+loadings2$PC1_scaled <- loadings2$PC1 * mult_trait
+loadings2$PC2_scaled <- loadings2$PC2 * mult_trait
+
+loadings2$PC1_label <- loadings2$PC1_scaled * 1.1
+loadings2$PC2_label <- loadings2$PC2_scaled * 1.1
+
+#PCPlotDF2_Traits <- PCPlotDF2_Traits %>%
+# mutate(Unique_Geno_Media = paste0(case_when(
+#        Geno == "A" ~ "A-T_A",
+#        Geno == "T" ~ "A-T_T",
+#        Geno == "B" ~ "B-W_B",
+#        Geno == "W" ~ "B-W_W",
+#        Geno == "C" ~ "C-X_C",
+#        Geno == "X" ~ "C-X_X",
+#        Geno == "D" ~ "D-Y_D",
+#        Geno == "Y" ~ "D-Y_Y",
+#        Geno == "E" ~ "E-Z_E",
+#        Geno == "Z" ~ "E-Z_Z",
+#        Geno == "T1" ~ "T-X_T",
+#        Geno == "X1" ~ "T-X_X",
+#        Geno == "X2" ~ "Z-X_X",
+#        Geno == "Z2" ~ "Z-X_Z",
+#        Geno == "W3" ~ "W-Y_W",
+#        Geno == "Y3" ~ "W-Y_Y",
+#        TRUE ~ NA_character_),"_",Media))
+
+#PC_lookup <- PCPlotDF2_Traits %>%
+#  select(Unique_Geno_Media, PC1, PC2) %>%
+#  distinct()
+
+#PC_lookup <- PC_lookup %>%
+#  ungroup() %>%
+#  group_by(Unique_Geno_Media) %>%
+#  summarise(AVG_TRAIT_PC1 = mean(PC1, na.rm = TRUE),AVG_TRAIT_PC2 = mean(PC2, na.rm = TRUE),.groups = "drop")
+
+#Evo_Plast <- Evo_Plast %>%
+#  left_join(PC_lookup, by = "Unique_Geno_Media")
+
+#rm(PC_lookup)
+
+#Extract TA coordinates and make them plotable
+TrajDF2_Traits<-as.data.frame(TP2$trajectories)
+#TrajDF2_Traits<-data.frame(matrix(ncol = 4, nrow=80))
+#TrajDF2_Traits<-TrajDF2_Traits %>% rename(Geno = X1, Media = X2, PC1 = X3, PC2=X4)
+
+TrajDF2_Traits <- TrajDF2_Traits %>%
+  select(matches("\\.PC[12]$"))
+
+TrajDF2_Traits$Sample <- rownames(TrajDF2_Traits)
+
+TrajDF2_Traits <- TrajDF2_Traits %>%
+  pivot_longer(cols = -Sample, names_to = "Geno_PC", values_to = "Score")
+
+TrajDF2_Traits <- TrajDF2_Traits %>%
+  separate(Geno_PC, into = c("Geno", "PC"), sep = "\\.")
+
+TrajDF2_Traits <- TrajDF2_Traits %>%
+  separate(Sample, into = c("SampleGeno", "Media"), sep = "\\.")
+
+TrajDF2_Traits <- TrajDF2_Traits %>% select(-SampleGeno)
+
+TrajDF2_Traits <- TrajDF2_Traits %>%
+  select(Geno, Media, PC, Score) %>%
+  pivot_wider(names_from = PC, values_from = Score)
+
+TrajDF2_Traits$Color<-NA
+TrajDF2_Traits$Color[which(TrajDF2_Traits$Geno=='A')] <- 'royalblue4'
+TrajDF2_Traits$Color[which(TrajDF2_Traits$Geno=='T')] <- 'powderblue'
+TrajDF2_Traits$Color[which(TrajDF2_Traits$Geno=='B')] <- 'forestgreen'
+TrajDF2_Traits$Color[which(TrajDF2_Traits$Geno=='W')] <- 'olivedrab2'
+TrajDF2_Traits$Color[which(TrajDF2_Traits$Geno=='C')] <- 'goldenrod1'
+TrajDF2_Traits$Color[which(TrajDF2_Traits$Geno=='X')] <- 'khaki1'
+TrajDF2_Traits$Color[which(TrajDF2_Traits$Geno=='D')] <- 'sienna2'
+TrajDF2_Traits$Color[which(TrajDF2_Traits$Geno=='Y')] <- 'lightsalmon' 
+TrajDF2_Traits$Color[which(TrajDF2_Traits$Geno=='E')] <- 'firebrick'
+TrajDF2_Traits$Color[which(TrajDF2_Traits$Geno=='Z')] <- 'indianred1'
+
+TrajDF2_Traits$Color[which(TrajDF2_Traits$Geno=='T1')] <- 'violetred3'
+TrajDF2_Traits$Color[which(TrajDF2_Traits$Geno=='X1')] <- 'palevioletred1'
+TrajDF2_Traits$Color[which(TrajDF2_Traits$Geno=='Z2')] <- 'darkmagenta'
+TrajDF2_Traits$Color[which(TrajDF2_Traits$Geno=='X2')] <- 'mediumorchid1'
+TrajDF2_Traits$Color[which(TrajDF2_Traits$Geno=='W3')] <- 'chocolate4'
+TrajDF2_Traits$Color[which(TrajDF2_Traits$Geno=='Y3')] <- 'tan'
+
+TrajDF2_Traits <- left_join(TrajDF2_Traits, Evo_Plast %>% select(Geno, Media, PlastRank), 
+                       by = c("Geno", "Media"))
+
+TrajDF2_Traits <- TrajDF2_Traits[!duplicated(TrajDF2_Traits), ]
+
+TrajDF2_Traits_wide <- TrajDF2_Traits %>%
+  select(Geno, Media, PC1, PC2, PlastRank, Color) %>%
+  pivot_wider(
+    names_from = Media,
+    values_from = c(PC1, PC2, PlastRank)
+  ) %>%
+  filter(!is.na(PC1_Constant), !is.na(PC1_Fluctuating))
+
+TRAIT_TrajLengths<-as.data.frame(TA2$PD$obs)
+
+TRAIT_TrajLengths <- data.frame(
+  Geno = names(TA2$PD$obs),
+  TRAIT_TrajLengths = as.numeric(TA2$PD$obs))
+
+Evo_Plast <- Evo_Plast %>%
+  left_join(TRAIT_TrajLengths, by = "Geno")
+
+rm(TRAIT_TrajLengths)
+```
+
+```{r}
+##### PLAST PC PLOTS OUTSIDE OF RRPP ####
+
+PCplot<-ggplot(PCPlotDF_Plast, aes(x = PC1, y = PC2, color=Media, shape=Media)) +
+  geom_point(size=2) +
+  scale_color_manual(name="Media", values=c("black", "grey"))+
+  stat_ellipse()+
+  geom_segment(data = loadings,aes(x = 0, y = 0,xend = PC1_scaled,yend = PC2_scaled),inherit.aes = FALSE,color = "red",
+    linewidth = 1.2, arrow = arrow(length = unit(0.2, "cm"))) +
+  geom_text(data = loadings,aes(x = PC1_label,y = PC2_label,label = Trait),inherit.aes = FALSE,color= "red", size=5, 
+    hjust=0) +
+  labs(y="PC2 (25.02%)", x="PC1 (38.73%)") +
+  coord_cartesian(ylim = c(-3, 3), xlim=c(-4,7)) +
+  theme(panel.border=element_blank(), panel.grid.major=element_blank(), panel.grid.minor=element_blank(), axis.line=element_line(colour="black"), panel.background=element_blank(), axis.text.x=element_text(color="black"), axis.text.y=element_text(color="black"))
+plot(PCplot)
+#ggsave("PCplot.pdf")
+
+PCplot2<-ggplot(PCPlotDF_Plast, aes(x = PC1, y = PC2, shape = Media)) +
+  geom_point(aes(fill = Media),
+             size = 2,
+             color = "black") +
+  scale_shape_manual(values = c(16, 21)) +
+  scale_fill_manual(values = c("black", "white")) +
+  stat_ellipse(aes(linetype = Media),
+               color = "black") +
+  scale_linetype_manual(values = c("solid", "dashed")) +
+  geom_segment(data = loadings,
+               aes(x = 0, y = 0,
+                   xend = PC1_scaled,
+                   yend = PC2_scaled),
+               inherit.aes = FALSE,
+               color = "red",
+               linewidth = 1.2,
+               arrow = arrow(length = unit(0.2, "cm"))) +
+  geom_text(data = loadings,
+            aes(x = PC1_label,
+                y = PC2_label,
+                label = Trait),
+            inherit.aes = FALSE,
+            color = "red",
+            size = 5,
+            hjust = 0) +
+  labs(y = "PC2 (25.02%)",x = "PC1 (38.73%)") +
+  coord_cartesian(ylim = c(-3, 3),
+                  xlim = c(-4, 7)) +
+  theme(legend.position = "none",
+        panel.border = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(colour = "black"),
+        panel.background = element_blank(),
+        axis.text.x = element_text(color = "black"),
+        axis.text.y = element_text(color = "black"))
+
+plot(PCplot2)
+#ggsave("PCplot2.pdf", width=3, height=2.5, units="in")
+```
+
+```{r}
+# Make PC loading legends
+# PLASTICITY
+LoadingDF_plast <- data.frame(Trait = loadings$Trait,PC1 = loadings$PC1,PC2 = loadings$PC2)
+
+LoadingDF_plast$y <- rev(seq_len(nrow(LoadingDF_plast)))
+
+LoadingDF_plast$Trait <- factor(LoadingDF_plast$Trait,levels = c("Antho","Chloro","SLA","RootNumber","RootLength"))
+
+LoadingPlot_plast <- ggplot() +
+  geom_vline(xintercept = 0,linetype = "dashed", alpha = 0.4) +
+  geom_vline(xintercept = 1.25, linetype = "dashed", alpha = 0.4) +
+  geom_segment(data = LoadingDF_plast,aes(x = 0,xend = PC1,y = Trait,yend = Trait),linewidth = 1.5,lineend = "round",
+    arrow = arrow(type = "closed",length = unit(0.18, "cm"))) +
+  geom_segment(data = LoadingDF_plast,aes(x = 1.25,xend = 1.25 + PC2,y = Trait,yend = Trait),linewidth = 1.5,
+    linetype = "dotted",lineend = "round",arrow = arrow(type = "closed",length = unit(0.18, "cm"))) +
+  annotate("text",x = 0,y = 5.8,label = "PC1",fontface = "bold") +
+  annotate("text",x = 1.25,y = 5.8,label = "PC2",fontface = "bold") +
+  coord_cartesian(xlim = c(-1.0, 2.0),clip = "off") +
+  theme_void() +
+  theme(axis.text.y = element_text(size = 12, colour = "black"))
+
+
+LoadingPlot_plast
+#ggsave("Plast_Loadings.pdf")
+```
+
+
+```{r}
+##### PLAST TRAJECTORY PLOTS OUTSIDE OF RRPP ####
+TAplot_arrow <- ggplot() +
+geom_point(data = PCPlotDF_Plast, aes(x = PC1, y = PC2, fill = Color, shape = Media), color = "black", size = 2) +
+scale_fill_identity() +
+scale_shape_manual(values = c("Constant" = 21, "Fluctuating" = 24)) +
+coord_cartesian(ylim = c(-3, 3), xlim = c(-4, 7)) +
+geom_segment(data = TrajDF_Plast_wide, aes(x = PC1_Constant, y = PC2_Constant, xend = PC1_Fluctuating, yend = PC2_Fluctuating), arrow = arrow(length = unit(0.30, "cm"), ends = "last", type = "closed"), linewidth = 1.5, color = "black") +
+geom_segment(data = TrajDF_Plast_wide, aes(x = PC1_Constant, y = PC2_Constant, xend = PC1_Fluctuating, yend = PC2_Fluctuating), arrow = arrow(length = unit(0.30, "cm"), ends = "last", type = "closed"), linewidth = 1, color = TrajDF_Plast_wide$Color) +
+scale_linewidth_identity() +
+labs(y = "PC2 (25.02%)",x = "PC1 (38.73%)") +
+theme(panel.border = element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"), axis.text.x = element_text(color = "black"), axis.text.y = element_text(color = "black"))
+plot(TAplot_arrow)
+#ggsave("TA_arrow_plot.pdf", TAplot_arrow) 
+
+TAplot_arrow2 <- ggplot() +
+  geom_point(data = subset(PCPlotDF_Plast, Media == "Constant"),aes(x = PC1, y = PC2, fill = Color),
+             shape = 21,color = "black",size = 2,stroke = 0.4) +
+  geom_point(data = subset(PCPlotDF_Plast, Media == "Fluctuating"),aes(x = PC1, y = PC2),
+             shape = 21,fill = NA,color = "black",size = 2, stroke = 0.4) +
+  geom_point(data = subset(PCPlotDF_Plast, Media == "Fluctuating"), aes(x = PC1, y = PC2, color = Color),
+             shape = 21,fill = NA,size = 1.6,stroke = 0.4) +
+  geom_point(data = subset(PCPlotDF_Plast, Media == "Fluctuating"),aes(x = PC1, y = PC2),
+             shape = 21,fill = "white",color = "black",size = 1.2, stroke = 0.3) +
+  scale_fill_identity() +
+  scale_color_identity() +
+  coord_cartesian(ylim = c(-3, 3),xlim = c(-4, 7)) +
+  geom_segment(data = TrajDF_Plast_wide,aes(x= PC1_Constant,y= PC2_Constant,xend= PC1_Fluctuating,
+              yend = PC2_Fluctuating),arrow = arrow(length = unit(0.30, "cm"), ends = "last",type = "closed"),
+              linewidth = 1.5, color = "black") +
+  geom_segment(data = TrajDF_Plast_wide,aes(x = PC1_Constant,y = PC2_Constant, xend = PC1_Fluctuating,
+              yend = PC2_Fluctuating),arrow = arrow(length = unit(0.30, "cm"),ends = "last",type = "closed"),
+               linewidth = 1, color = TrajDF_Plast_wide$Color) +
+  scale_linewidth_identity() +
+  labs(y = "PC2 (25.02%)",x = "PC1 (38.73%)") +
+  theme(panel.border = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.line = element_line(colour = "black"),
+        axis.text.x = element_text(color = "black"),
+        axis.text.y = element_text(color = "black"))
+
+TAplot_arrow2
+#ggsave("TA_arrow_plot2.pdf", TAplot_arrow2, height=2.5, width=3, units="in") 
+
+```
+
+```{r}
+##### TRAIT PC PLOTS OUTSIDE OF RRPP ####
+#By Treatment
+PCplot_TRAIT <-ggplot(PCPlotDF2_Traits, aes(x = PC1, y = PC2, color=Media, shape=Media)) +
+  geom_point(size=2) +
+  scale_color_manual(name="Media", values=c("black", "grey"))+
+  stat_ellipse()+
+  geom_segment(data = loadings2,aes(x = 0, y = 0,xend = PC1_scaled,yend = PC2_scaled),inherit.aes = FALSE,color = "red",
+    linewidth = 1.2, arrow = arrow(length = unit(0.2, "cm"))) +
+  geom_text(data=loadings2,aes(x=PC1_label,y=PC2_label,label=Trait),inherit.aes=FALSE,color="red",size=5, hjust=0) +
+  labs(x = "PC1 (51.03%)", y = "PC2 (19.33%)") +
+  coord_cartesian(ylim = c(-3, 3), xlim=c(-3,3.5)) +
+  theme(panel.border=element_blank(), panel.grid.major=element_blank(), panel.grid.minor=element_blank(), axis.line=element_line(colour="black"), panel.background=element_blank(), axis.text.x=element_text(color="black"), axis.text.y=element_text(color="black"))
+plot(PCplot_TRAIT)
+#ggsave("PCplot_TRAIT.pdf")
+
+PCplot_TRAIT2<-ggplot(PCPlotDF2_Traits, aes(x = PC1, y = PC2, shape = Media)) +
+  geom_point(aes(fill = Media),
+             size = 2,
+             color = "black") +
+  scale_shape_manual(values = c(16, 21)) +
+  scale_fill_manual(values = c("black", "white")) +
+  stat_ellipse(aes(linetype = Media),
+               color = "black") +
+  scale_linetype_manual(values = c("solid", "dashed")) +
+  geom_segment(data = loadings2,
+               aes(x = 0, y = 0,
+                   xend = PC1_scaled,
+                   yend = PC2_scaled),
+               inherit.aes = FALSE,
+               color = "red",
+               linewidth = 1.2,
+               arrow = arrow(length = unit(0.2, "cm"))) +
+  geom_text(data = loadings2,
+            aes(x = PC1_label,
+                y = PC2_label,
+                label = Trait),
+            inherit.aes = FALSE,
+            color = "red",
+            size = 5,
+            hjust = 0) +
+  labs(x = "PC1 (51.03%)", y = "PC2 (19.33%)") +
+  coord_cartesian(ylim = c(-3, 3), xlim=c(-3,3.5)) +
+  theme(legend.position = "none", 
+        panel.border = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(colour = "black"),
+        panel.background = element_blank(),
+        axis.text.x = element_text(color = "black"),
+        axis.text.y = element_text(color = "black"))
+
+plot(PCplot_TRAIT2)
+#ggsave("PCplot_TRAIT2.pdf", width=3, height=2.5, units="in")
+```
+
+```{r}
+# Make PC loading legends
+# TRAITS
+LoadingDF_trait <- data.frame(Trait = loadings2$Trait,PC1 = loadings2$PC1,PC2 = loadings2$PC2)
+
+LoadingDF_trait$y <- rev(seq_len(nrow(LoadingDF_trait)))
+
+LoadingDF_trait$Trait <- factor(LoadingDF_trait$Trait,levels = c("Antho","Chloro","SLA","RootNumber","RootLength"))
+
+LoadingPlot_trait <- ggplot() +
+  geom_vline(xintercept = 0,linetype = "dashed", alpha = 0.4) +
+  geom_vline(xintercept = 1.25, linetype = "dashed", alpha = 0.4) +
+  geom_segment(data = LoadingDF_plast,aes(x = 0,xend = PC1,y = Trait,yend = Trait),linewidth = 1.5,lineend = "round",
+    arrow = arrow(type = "closed",length = unit(0.18, "cm"))) +
+  geom_segment(data = LoadingDF_plast,aes(x = 1.25,xend = 1.25 + PC2,y = Trait,yend = Trait),linewidth = 1.5,
+    linetype = "dotted",lineend = "round",arrow = arrow(type = "closed",length = unit(0.18, "cm"))) +
+  annotate("text",x = 0,y = 5.8,label = "PC1",fontface = "bold") +
+  annotate("text",x = 1.25,y = 5.8,label = "PC2",fontface = "bold") +
+  coord_cartesian(xlim = c(-1.0, 2.0),clip = "off") +
+  theme_void() +
+  theme(axis.text.y = element_text(size = 12, colour = "black"))
+
+LoadingPlot_trait
+#ggsave("Trait_Loadings.pdf")
+```
+
+```{r}
+##### TRAIT TRAJECTORY PLOTS OUTSIDE OF RRPP ####
+TAplot_arrow_TRAIT <- ggplot() +
+geom_point(data = PCPlotDF2_Traits, aes(x = PC1, y = PC2, fill = Color, shape = Media), color = "black", size = 2) +
+scale_fill_identity() +
+scale_shape_manual(values = c("Constant" = 21, "Fluctuating" = 24)) +
+coord_cartesian(ylim = c(-3, 3), xlim = c(-3, 3)) +
+geom_segment(data = TrajDF2_Traits_wide, aes(x = PC1_Constant, y = PC2_Constant, xend = PC1_Fluctuating, yend = PC2_Fluctuating), arrow = arrow(length = unit(0.30, "cm"), ends = "last", type = "closed"), linewidth = 1.5, color = "black") +
+geom_segment(data = TrajDF2_Traits_wide, aes(x = PC1_Constant, y = PC2_Constant, xend = PC1_Fluctuating, yend = PC2_Fluctuating), arrow = arrow(length = unit(0.30, "cm"), ends = "last", type = "closed"), linewidth = 1, color = TrajDF2_Traits_wide$Color) +
+scale_linewidth_identity() +
+labs(x = "PC1 (51.03%)", y = "PC2 (19.33%)") +
+theme(panel.border = element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"), axis.text.x = element_text(color = "black"), axis.text.y = element_text(color = "black"))
+plot(TAplot_arrow_TRAIT)
+#ggsave("TA_arrow_TRAIT_plot.pdf") 
+
+TAplot_arrow_TRAIT2 <- ggplot() +
+  geom_point(data = subset(PCPlotDF2_Traits, Media == "Constant"),aes(x = PC1, y = PC2, fill = Color),
+             shape = 21,color = "black",size = 2,stroke = 0.4) +
+  geom_point(data = subset(PCPlotDF2_Traits, Media == "Fluctuating"),aes(x = PC1, y = PC2),
+             shape = 21,fill = NA,color = "black",size = 2, stroke = 0.4) +
+  geom_point(data = subset(PCPlotDF2_Traits, Media == "Fluctuating"), aes(x = PC1, y = PC2, color = Color),
+             shape = 21,fill = NA,size = 1.6,stroke = 0.4) +
+  geom_point(data = subset(PCPlotDF2_Traits, Media == "Fluctuating"),aes(x = PC1, y = PC2),
+             shape = 21,fill = "white",color = "black",size = 1.2, stroke = 0.3) +
+  scale_fill_identity() +
+  scale_color_identity() +
+  coord_cartesian(ylim = c(-3, 3), xlim=c(-3,3.5)) +
+  geom_segment(data = TrajDF2_Traits_wide,aes(x= PC1_Constant,y= PC2_Constant,xend= PC1_Fluctuating,
+              yend = PC2_Fluctuating),arrow = arrow(length = unit(0.30, "cm"), ends = "last",type = "closed"),
+              linewidth = 1.5, color = "black") +
+  geom_segment(data = TrajDF2_Traits_wide,aes(x = PC1_Constant,y = PC2_Constant, xend = PC1_Fluctuating,
+              yend = PC2_Fluctuating),arrow = arrow(length = unit(0.30, "cm"),ends = "last",type = "closed"),
+               linewidth = 1, color = TrajDF2_Traits_wide$Color) +
+  scale_linewidth_identity() +
+  labs(x = "PC1 (51.03%)", y = "PC2 (19.33%)") +
+  theme(panel.border = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.line = element_line(colour = "black"),
+        axis.text.x = element_text(color = "black"),
+        axis.text.y = element_text(color = "black"))
+
+TAplot_arrow_TRAIT2
+#ggsave("TAplot_arrow_TRAIT2.pdf", TAplot_arrow_TRAIT2, width=3, height=2.5, units="in")
+```
+
+```{r}
+#NEEDS FIXED
+rm(TAplot)
+rm(TAplot_arrow)
+rm(TAplot_Plast_arrow)
+rm(PCplot)
+rm(TP)
+rm(PlotData)
+rm(PWT)
+rm(TA)
+rm(TA.summary)
+rm(Traits)
+```
+
+
+##########################################################################################################
+```{r}
+#Stacked Bar Plots
+
+std.error <- function(x) sd(x)/sqrt(length(x))
+
+AVG_Evo <- Evo_Plast %>%
+  group_by(GenoPair, Geno, Media, PlastRank, Color) %>%
+  summarise(AVG_Final.Freq = mean(Final.Freq, na.rm = TRUE),sd = sd(Final.Freq), n = n(), error=sd/sqrt(n), .groups = "drop")
+
+StackedBar_Evo<-ggplot(AVG_Evo, aes(x = GenoPair, y = AVG_Final.Freq, fill = Color,)) +
+  scale_fill_identity() +
+  geom_bar(stat = "identity") +
+  geom_errorbar(aes(ymin = AVG_Final.Freq - error, ymax = AVG_Final.Freq + error), width = .2) +
+  facet_wrap(~ Media) +
+  geom_text(aes(label = PlastRank),position = position_stack(vjust = 0.5),color = "black",size = 3.5) +
+  labs(title = "Average Final Frequency per Geno in GenoPairs",x = "Geno Pair",y = "Average Final Frequency",fill = "Geno") +
+  theme(panel.border=element_blank(), panel.grid.major=element_blank(), panel.grid.minor=element_blank(), axis.line=element_line(colour="black"), panel.background=element_blank(), axis.text.x=element_text(color="black"), axis.text.y=element_text(color="black"))
+plot(StackedBar_Evo)
+#ggsave("StackedBar_Plot.pdf")
+```
+
+##########################################################################################################
+
+```{r}
+# Testing whether genotype (Geno) final frequencies were significantly different by media treatment
+Media_results <- Evo_Plast %>%
+  group_by(Geno) %>%
+  summarise(tidy(t.test(Final.Freq[Media == "Constant"], Final.Freq[Media == "Fluctuating"])),
+            mean_Constant = mean(Final.Freq[Media == "Constant"]),
+            mean_Fluctuating = mean(Final.Freq[Media == "Fluctuating"]))
+print(Media_results)
+```
+
+```{r}
+# Restructure PCs for plotting
+#Evo_Plast <- Evo_Plast %>%
+#  pivot_longer(cols = c(AVG_TRAIT_PC1, AVG_TRAIT_PC2),names_to = "PC",values_to = "PC_Score")
+
+Evo_Plast_C<- filter(Evo_Plast,Media=="Constant")
+Evo_Plast_F<- filter(Evo_Plast,Media=="Fluctuating")
+```
+
+```{r}
+# Starting vs Final
+Evo_Plast_C_start_results <- Evo_Plast_C %>%
+  group_by(Geno) %>%
+  summarise(t_test = list(t.test(Starting.Freq, Final.Freq, paired = TRUE))) %>%
+  mutate(tidy_result = map(t_test, broom::tidy)) %>%
+  unnest(tidy_result) %>%
+  select(Geno, estimate, statistic, p.value, conf.low, conf.high, method)
+print(Evo_Plast_C_start_results)
+
+Evo_Plast_F_start_results <- Evo_Plast_F %>%
+  group_by(Geno) %>%
+  summarise(t_test = list(t.test(Starting.Freq, Final.Freq, paired = TRUE))) %>%
+  mutate(tidy_result = map(t_test, broom::tidy)) %>%
+  unnest(tidy_result) %>%
+  select(Geno, estimate, statistic, p.value, conf.low, conf.high, method)
+print(Evo_Plast_F_start_results)
+
+# Expected vs Final
+#Evo_Plast_C_start_results <- Evo_Plast_C %>%
+#  group_by(Geno) %>%
+#  summarise(t_test = list(t.test(Expected.Freq, Final.Freq, paired = TRUE))) %>%
+#  mutate(tidy_result = map(t_test, broom::tidy)) %>%
+#  unnest(tidy_result) %>%
+#  select(Geno, estimate, statistic, p.value, conf.low, conf.high, method)
+#print(Evo_Plast_C_start_results)
+
+#Evo_Plast_F_start_results <- Evo_Plast_F %>%
+#  group_by(Geno) %>%
+#  summarise(t_test = list(t.test(Expected.Freq, Final.Freq, paired = TRUE))) %>%
+#  mutate(tidy_result = map(t_test, broom::tidy)) %>%
+#  unnest(tidy_result) %>%
+#  select(Geno, estimate, statistic, p.value, conf.low, conf.high, method)
+#print(Evo_Plast_F_start_results)
+```
+
+##########################################################################################################
+#################### Beta Regressions ####################
+#### A Beta Regression is a better fit than any linear models since we are using continuous proportions between 0 and 1 ####
+### I also log transformed them ###
+
+#################### t-tests for Geno differences ####################
+```{r}
+# Set Final Freq x Plasticity Metric Colors
+Evo_Plast_C$PlastRank_Color<-NA
+Evo_Plast_C$PlastRank_Color[which(Evo_Plast_C$PlastRank=='L')] <- 'grey'
+Evo_Plast_C$PlastRank_Color[which(Evo_Plast_C$PlastRank=='H')] <- 'black'
+
+Evo_Plast_F$PlastRank_Color<-NA
+Evo_Plast_F$PlastRank_Color[which(Evo_Plast_F$PlastRank=='L')] <- 'grey'
+Evo_Plast_F$PlastRank_Color[which(Evo_Plast_F$PlastRank=='H')] <- 'black'
+```
+
+```{r}
+#Plot Final Freq by Plasticity Metrics
+ggplot(Evo_Plast_C, aes(x = Mean_Plast_Dist_C, y = Final.Freq, color = PlastRank_Color, shape=PlastRank)) +
+  geom_point(size=2.5) +
+  stat_smooth(method = "glm", method.args = list(family = "quasibinomial"), se = FALSE) +
+  scale_color_identity() +
+  xlim(1, 5) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.25), limits = c(0, 1)) +
+  theme(panel.border=element_blank(), panel.grid.major=element_blank(), panel.grid.minor=element_blank(), axis.line=element_line(colour="black"), panel.background=element_blank(), axis.text.x=element_text(color="black"), axis.text.y=element_text(color="black"))
+#ggsave("FinalFreq_PlastRank_C_Plot.pdf")
+
+ggplot(Evo_Plast_F, aes(x = Mean_Plast_Dist_F, y = Final.Freq, color = PlastRank_Color, shape=PlastRank)) +
+   geom_point(size=2.5) +
+  stat_smooth(method = "glm", method.args = list(family = "quasibinomial"), se = FALSE) +
+  scale_color_identity() +
+  xlim(1, 5) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.25), limits = c(0, 1)) +
+  theme(panel.border=element_blank(), panel.grid.major=element_blank(), panel.grid.minor=element_blank(), axis.line=element_line(colour="black"), panel.background=element_blank(), axis.text.x=element_text(color="black"), axis.text.y=element_text(color="black"))
+#ggsave("FinalFreq_PlastRank_F_Plot.pdf")
+```
+
+```{r}
+# Calculate means and standard errors
+Evo_Plast_summary <- Evo_Plast %>%
+  group_by(Media, PlastRank) %>%
+  summarise(AVG_Final.Freq = mean(Final.Freq),SE_Final.Freq = sd(Final.Freq) / sqrt(n()),.groups = "drop")
+
+PlastRank_results <- Evo_Plast %>%
+  group_by(Media) %>%
+  do(tidy(t.test(Final.Freq ~ PlastRank, data = .)))
+print(PlastRank_results)
+
+# Plot with individual points and group means
+ggplot(Evo_Plast_summary, aes(x = Media, y = AVG_Final.Freq, group = PlastRank, shape = PlastRank)) +
+  geom_point(size = 5) +
+  geom_line(linewidth=1) +
+  geom_errorbar(aes(ymin = AVG_Final.Freq - SE_Final.Freq,ymax = AVG_Final.Freq + SE_Final.Freq),width = 0.2) +
+  scale_shape_manual(values = c("H" = 16, "L" = 17)) +
+  scale_y_continuous(breaks = seq(0.42, 0.58, by = 0.02), limits = c(0.42, 0.58)) +
+  geom_text(data = data.frame(Media = c("Constant", "Fluctuating"),AVG_Final.Freq = c(0.58, 0.58),label = c("p = 0.198", "p < 0.001*")),aes(x = Media, y = AVG_Final.Freq, label = label),inherit.aes = FALSE,size = 4) +
+  theme(panel.border=element_blank(), panel.grid.major=element_blank(), panel.grid.minor=element_blank(), axis.line=element_line(colour="black"), panel.background=element_blank(), axis.text.x=element_text(color="black"), axis.text.y=element_text(color="black"))
+#ggsave("PlastRank_ttest.pdf")
+
+#rm(Evo_Plast_summary)
+```
+
+```{r}
+Evo_Trait <- Evo_Plast %>%
+  select(c(1:10,14,16:17,20, 36:47, 49:55, 57:63))
+
+Evo_Trait <- Evo_Trait %>%
+  group_by(Unique_Geno_Media) %>%
+  summarise(Final.Freq = mean(Final.Freq, na.rm = TRUE),Freq.Change = mean(Freq.Change, na.rm = TRUE),across(-Final.Freq, first),.groups = "drop")
+
+trait_centroid <- colMeans(Evo_Trait[,c("AVG_RootNumber","AVG_RootLength","AVG_SLA","AVG_Chloro","AVG_Antho")],na.rm= TRUE)
+
+Evo_Trait$Trait_Dist <- sqrt(
+  (Evo_Trait$AVG_RootNumber - mean(Evo_Trait$AVG_RootNumber, na.rm = TRUE))^2 +
+  (Evo_Trait$AVG_RootLength - mean(Evo_Trait$AVG_RootLength, na.rm = TRUE))^2 +
+  (Evo_Trait$AVG_SLA        - mean(Evo_Trait$AVG_SLA, na.rm = TRUE))^2 +
+  (Evo_Trait$AVG_Chloro     - mean(Evo_Trait$AVG_Chloro, na.rm = TRUE))^2 +
+  (Evo_Trait$AVG_Antho      - mean(Evo_Trait$AVG_Antho, na.rm = TRUE))^2)
+```
+
+```{r}
+Evo_Trait_C<- filter(Evo_Trait,Media=="Constant")
+Evo_Trait_F<- filter(Evo_Trait,Media=="Fluctuating")
+```
+
+```{r}
+#Had to drop + (1|GenoPair) from models as they showed near 0 variance and caused the fluctuating model to crash
+# Can sub Evo_RGR in here
+
+# Multivariate Plasticity - Constant Media
+model1 <- glmmTMB(Final.Freq ~ AVG_RGR + Mean_Plast_Dist_C * Trait_Dist + (1 | Clone),data = Evo_Trait_C,family = beta_family(link = "logit"))
+summary(model1)
+
+#Had to split PlastRank into second model to help with fitting
+model1b <- glmmTMB(Final.Freq ~ PlastRank + (1 | Clone),data = Evo_Trait_C,family = beta_family(link = "logit"))
+summary(model1b)
+
+# Multivariate Plasticity - Fluctuating Media
+model2 <- glmmTMB(Final.Freq ~ AVG_RGR + Mean_Plast_Dist_F * Trait_Dist + (1 | Clone),data = Evo_Trait_F,family = beta_family(link = "logit"))
+summary(model2)
+
+#Had to split PlastRank into second model to help with fitting
+model2b <- glmmTMB(Final.Freq ~ PlastRank + (1 | Clone),data = Evo_Trait_F,family = beta_family(link = "logit"))
+summary(model2b)
+```
+
+```{r}
+### Final Frequency predicted by Specific Trait Plasticities
+#Dropped + (1|GenoPair) from models as they showed near 0 variance and to align with previous models
+#Adding RGR makes these models fail, since they are nonsignificant above, I removed them here
+
+# Constant Media
+model3 <- glmmTMB(Final.Freq ~ AVG_PLAST_C_RootNumber+AVG_PLAST_C_RootLength+AVG_PLAST_C_SLA+AVG_PLAST_C_Chloro+AVG_PLAST_C_Antho + (1 | Clone),data = Evo_Trait_C,family = beta_family(link = "logit"))
+summary(model3)
+
+# Fluctuating Media
+model4 <- glmmTMB(Final.Freq ~ AVG_PLAST_F_RootNumber+AVG_PLAST_F_RootLength+AVG_PLAST_F_SLA+AVG_PLAST_F_Chloro+AVG_PLAST_F_Antho + (1 | Clone),data = Evo_Trait_F,family = beta_family(link = "logit"))
+summary(model4)
+```
+
+```{r}
+estimates <- fixef(model3)$cond
+conf_int <- confint(model3, parm = "beta_", level = 0.95)
+coef_model3 <- data.frame(term = names(estimates),estimate = estimates, conf.low = conf_int[, 1],conf.high = conf_int[, 2])
+coef_model3 <- subset(coef_model3, term != "(Intercept)")
+
+coef_model3 <- coef_model3 %>%
+  mutate(
+    est_prob  = plogis(estimate),
+    low_prob  = plogis(conf.low),
+    high_prob = plogis(conf.high)
+  )
+
+ggplot(coef_model3, aes(x = estimate,  y = factor(term, levels = c(
+    "AVG_PLAST_C_Antho",
+    "AVG_PLAST_C_Chloro",
+    "AVG_PLAST_C_SLA",
+    "AVG_PLAST_C_RootNumber",
+    "AVG_PLAST_C_RootLength"
+  )))) +
+  geom_errorbarh(aes(xmin = conf.low, xmax = conf.high), height = 0.2) +
+  geom_point(size = 3) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
+  coord_cartesian(xlim = c(-5, 5)) +
+  scale_x_continuous(breaks = seq(-5, 5, by = 1)) +
+  theme_classic() +
+  xlab("Effect Size (logit scale)") +
+  ylab("Plasticity") +
+  ggtitle("Effect of Trait Plasticity on Final Freq in Constant Media")
+#ggsave("EffectSize_Plast_C_Plot.pdf")
+```
+
+```{r}
+#Marginal Effects
+pred_rootnum <- ggpredict(model3, terms = "AVG_PLAST_C_RootNumber [n=30]")
+pred_rootlen <- ggpredict(model3, terms = "AVG_PLAST_C_RootLength [n=30]")
+pred_sla     <- ggpredict(model3, terms = "AVG_PLAST_C_SLA [n=30]")
+pred_chloro  <- ggpredict(model3, terms = "AVG_PLAST_C_Chloro [n=30]")
+pred_antho   <- ggpredict(model3, terms = "AVG_PLAST_C_Antho [n=30]")
+
+pred_rootnum$facet <- "Root Number"
+pred_rootlen$facet <- "Root Length"
+pred_sla$facet     <- "SLA"
+pred_chloro$facet  <- "Chlorophyll"
+pred_antho$facet   <- "Anthocyanin"
+
+pred_model3 <- bind_rows(
+  pred_rootnum,
+  pred_rootlen,
+  pred_sla,
+  pred_chloro,
+  pred_antho
+)
+
+ggplot(pred_model3, aes(x = x, y = predicted)) +
+  geom_line(size = 1) +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2) +
+  facet_wrap(~facet, scales = "free_x") +
+  theme_classic() +
+  xlab("Trait Plasticity Value") +
+  ylab("Predicted Final Frequency") +
+  ggtitle("Effect of Trait Plasticity on Final Freq in Constant Media")
+```
+
+```{r}
+estimates <- fixef(model4)$cond
+conf_int <- confint(model4, parm = "beta_", level = 0.95)
+coef_model4 <- data.frame(term = names(estimates),estimate = estimates, conf.low = conf_int[, 1],conf.high = conf_int[, 2])
+coef_model4 <- subset(coef_model4, term != "(Intercept)")
+
+ggplot(coef_model4, aes(x = estimate,  y = factor(term, levels = c(
+    "AVG_PLAST_F_Antho",
+    "AVG_PLAST_F_Chloro",
+    "AVG_PLAST_F_SLA",
+    "AVG_PLAST_F_RootNumber",
+    "AVG_PLAST_F_RootLength"
+  )))) +
+  geom_errorbarh(aes(xmin = conf.low, xmax = conf.high), height = 0.2) +
+  geom_point(size = 3) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
+  coord_cartesian(xlim = c(-5, 5)) +
+  scale_x_continuous(breaks = seq(-5, 5, by = 1)) +
+  theme_classic() +
+  xlab("Effect Size (logit scale)") +
+  ylab("Plasticity") +
+  ggtitle("Effect of Trait Plasticity on Final Freq in Fluctuating Media")
+#ggsave("EffectSize_Plast_F_Plot.pdf")
+```
+
+```{r}
+#Marginal Effects
+pred_rootnum <- ggpredict(model4, terms = "AVG_PLAST_F_RootNumber [n=30]")
+pred_rootlen <- ggpredict(model4, terms = "AVG_PLAST_F_RootLength [n=30]")
+pred_sla     <- ggpredict(model4, terms = "AVG_PLAST_F_SLA [n=30]")
+pred_chloro  <- ggpredict(model4, terms = "AVG_PLAST_F_Chloro [n=30]")
+pred_antho   <- ggpredict(model4, terms = "AVG_PLAST_F_Antho [n=30]")
+
+pred_rootnum$facet <- "Root Number"
+pred_rootlen$facet <- "Root Length"
+pred_sla$facet     <- "SLA"
+pred_chloro$facet  <- "Chlorophyll"
+pred_antho$facet   <- "Anthocyanin"
+
+pred_model4 <- bind_rows(
+  pred_rootnum,
+  pred_rootlen,
+  pred_sla,
+  pred_chloro,
+  pred_antho
+)
+
+ggplot(pred_model4, aes(x = x, y = predicted)) +
+  geom_line(size = 1) +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2) +
+  facet_wrap(~facet, scales = "free_x") +
+  theme_classic() +
+  xlab("Trait Plasticity Value") +
+  ylab("Predicted Final Frequency") +
+  ggtitle("Effect of Trait Plasticity on Final Freq in Fluctuating Media")
+```
+
+```{r}
+### Final Frequency predicted by Specific Trait Averages
+#Dropped + (1|GenoPair) from models as they showed near 0 variance and to align with previous models
+
+# Constant Media
+model5 <- glmmTMB(Final.Freq ~ AVG_RootNumber+AVG_RootLength+AVG_SLA+AVG_Chloro+AVG_Antho + (1 | Clone),data = Evo_Trait_C,family = beta_family(link = "logit"))
+summary(model5)
+
+# Fluctuating Media
+model6 <- glmmTMB(Final.Freq ~ AVG_RootNumber+AVG_RootLength+AVG_SLA+AVG_Chloro+AVG_Antho + (1 | Clone),data = Evo_Trait_F,family = beta_family(link = "logit"))
+summary(model6)
+```
+
+```{r}
+estimates <- fixef(model5)$cond
+conf_int <- confint(model5, parm = "beta_", level = 0.95)
+coef_model5 <- data.frame(term = names(estimates),estimate = estimates, conf.low = conf_int[, 1],conf.high = conf_int[, 2])
+coef_model5 <- subset(coef_model5, term != "(Intercept)")
+
+ggplot(coef_model5, aes(x = estimate,  y = factor(term, levels = c(
+    "AVG_Antho",
+    "AVG_Chloro",
+    "AVG_SLA",
+    "AVG_RootNumber",
+    "AVG_RootLength"
+  )))) +
+  geom_errorbarh(aes(xmin = conf.low, xmax = conf.high), height = 0.2) +
+  geom_point(size = 3) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
+  coord_cartesian(xlim = c(-5, 5)) +
+  scale_x_continuous(breaks = seq(-5, 5, by = 1)) +
+  theme_classic() +
+  xlab("Effect Size (logit scale)") +
+  ylab("Trait") +
+  ggtitle("Effect of Trait Values on Final Freq in Constant Media")
+#ggsave("EffectSize_Trait_C_Plot.pdf")
+```
+
+```{r}
+#Marginal Effects
+pred_rootnum <- ggpredict(model5, terms = "AVG_RootNumber [n=30]")
+pred_rootlen <- ggpredict(model5, terms = "AVG_RootLength [n=30]")
+pred_sla     <- ggpredict(model5, terms = "AVG_SLA [n=30]")
+pred_chloro  <- ggpredict(model5, terms = "AVG_Chloro [n=30]")
+pred_antho   <- ggpredict(model5, terms = "AVG_Antho [n=30]")
+
+pred_rootnum$facet <- "Root Number"
+pred_rootlen$facet <- "Root Length"
+pred_sla$facet     <- "SLA"
+pred_chloro$facet  <- "Chlorophyll"
+pred_antho$facet   <- "Anthocyanin"
+
+pred_model5 <- bind_rows(
+  pred_rootnum,
+  pred_rootlen,
+  pred_sla,
+  pred_chloro,
+  pred_antho
+)
+
+ggplot(pred_model5, aes(x = x, y = predicted)) +
+  geom_line(size = 1) +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2) +
+  facet_wrap(~facet, scales = "free_x") +
+  theme_classic() +
+  xlab("Trait Value") +
+  ylab("Predicted Final Frequency") +
+  ggtitle("Effect of Trait Value on Final Freq in Constant Media")
+```
+
+```{r}
+estimates <- fixef(model6)$cond
+conf_int <- confint(model6, parm = "beta_", level = 0.95)
+coef_model6 <- data.frame(term = names(estimates),estimate = estimates, conf.low = conf_int[, 1],conf.high = conf_int[, 2])
+coef_model6 <- subset(coef_model6, term != "(Intercept)")
+
+ggplot(coef_model6, aes(x = estimate,  y = factor(term, levels = c(
+    "AVG_Antho",
+    "AVG_Chloro",
+    "AVG_SLA",
+    "AVG_RootNumber",
+    "AVG_RootLength"
+  )))) +
+  geom_errorbarh(aes(xmin = conf.low, xmax = conf.high), height = 0.2) +
+  geom_point(size = 3) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
+  coord_cartesian(xlim = c(-5, 5)) +
+  scale_x_continuous(breaks = seq(-5, 5, by = 1)) +
+  theme_classic() +
+  xlab("Effect Size (logit scale)") +
+  ylab("Trait") +
+  ggtitle("Effect of Trait Values on Final Freq in Fluctuating Media")
+#ggsave("EffectSize_Trait_F_Plot.pdf")
+```
+
+```{r}
+#Marginal Effects
+pred_rootnum <- ggpredict(model6, terms = "AVG_RootNumber [n=30]")
+pred_rootlen <- ggpredict(model6, terms = "AVG_RootLength [n=30]")
+pred_sla     <- ggpredict(model6, terms = "AVG_SLA [n=30]")
+pred_chloro  <- ggpredict(model6, terms = "AVG_Chloro [n=30]")
+pred_antho   <- ggpredict(model6, terms = "AVG_Antho [n=30]")
+
+pred_rootnum$facet <- "Root Number"
+pred_rootlen$facet <- "Root Length"
+pred_sla$facet     <- "SLA"
+pred_chloro$facet  <- "Chlorophyll"
+pred_antho$facet   <- "Anthocyanin"
+
+pred_model6 <- bind_rows(
+  pred_rootnum,
+  pred_rootlen,
+  pred_sla,
+  pred_chloro,
+  pred_antho
+)
+
+ggplot(pred_model6, aes(x = x, y = predicted)) +
+  geom_line(size = 1) +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2) +
+  facet_wrap(~facet, scales = "free_x") +
+  theme_classic() +
+  xlab("Trait Value") +
+  ylab("Predicted Final Frequency") +
+  ggtitle("Effect of Trait Value on Final Freq in Fluctuating Media")
+```
+
+```{r}
+# Make large marginal effects plot - PLASTICITY
+# Common x-ranges
+rootnum_range_plast <- range(c(Evo_Trait_C$AVG_PLAST_C_RootNumber,
+                               Evo_Trait_F$AVG_PLAST_F_RootNumber),
+                             na.rm = TRUE)
+
+rootlen_range_plast <- range(c(Evo_Trait_C$AVG_PLAST_C_RootLength,
+                               Evo_Trait_F$AVG_PLAST_F_RootLength),
+                             na.rm = TRUE)
+
+sla_range_plast <- range(c(Evo_Trait_C$AVG_PLAST_C_SLA,
+                           Evo_Trait_F$AVG_PLAST_F_SLA),
+                         na.rm = TRUE)
+
+chloro_range_plast <- range(c(Evo_Trait_C$AVG_PLAST_C_Chloro,
+                              Evo_Trait_F$AVG_PLAST_F_Chloro),
+                            na.rm = TRUE)
+
+antho_range_plast <- range(c(Evo_Trait_C$AVG_PLAST_C_Antho,
+                             Evo_Trait_F$AVG_PLAST_F_Antho),
+                           na.rm = TRUE)
+
+# Constant
+pred_rootnum_plast_C <- ggpredict(
+  model3,
+  terms = sprintf("AVG_PLAST_C_RootNumber [%.2f:%.2f by=0.1]",
+                  rootnum_range_plast[1], rootnum_range_plast[2])
+)
+
+pred_rootlen_plast_C <- ggpredict(
+  model3,
+  terms = sprintf("AVG_PLAST_C_RootLength [%.2f:%.2f by=0.1]",
+                  rootlen_range_plast[1], rootlen_range_plast[2])
+)
+
+pred_sla_plast_C <- ggpredict(
+  model3,
+  terms = sprintf("AVG_PLAST_C_SLA [%.2f:%.2f by=0.1]",
+                  sla_range_plast[1], sla_range_plast[2])
+)
+
+pred_chloro_plast_C <- ggpredict(
+  model3,
+  terms = sprintf("AVG_PLAST_C_Chloro [%.2f:%.2f by=0.1]",
+                  chloro_range_plast[1], chloro_range_plast[2])
+)
+
+pred_antho_plast_C <- ggpredict(
+  model3,
+  terms = sprintf("AVG_PLAST_C_Antho [%.2f:%.2f by=0.1]",
+                  antho_range_plast[1], antho_range_plast[2])
+)
+
+# Fluctuating
+pred_rootnum_plast_F <- ggpredict(
+  model4,
+  terms = sprintf("AVG_PLAST_F_RootNumber [%.2f:%.2f by=0.1]",
+                  rootnum_range_plast[1], rootnum_range_plast[2])
+)
+
+pred_rootlen_plast_F <- ggpredict(
+  model4,
+  terms = sprintf("AVG_PLAST_F_RootLength [%.2f:%.2f by=0.1]",
+                  rootlen_range_plast[1], rootlen_range_plast[2])
+)
+
+pred_sla_plast_F <- ggpredict(
+  model4,
+  terms = sprintf("AVG_PLAST_F_SLA [%.2f:%.2f by=0.1]",
+                  sla_range_plast[1], sla_range_plast[2])
+)
+
+pred_chloro_plast_F <- ggpredict(
+  model4,
+  terms = sprintf("AVG_PLAST_F_Chloro [%.2f:%.2f by=0.1]",
+                  chloro_range_plast[1], chloro_range_plast[2])
+)
+
+pred_antho_plast_F <- ggpredict(
+  model4,
+  terms = sprintf("AVG_PLAST_F_Antho [%.2f:%.2f by=0.1]",
+                  antho_range_plast[1], antho_range_plast[2])
+)
+
+pred_rootnum_plast_C$Trait <- "Root Number"
+pred_rootlen_plast_C$Trait <- "Root Length"
+pred_sla_plast_C$Trait     <- "SLA"
+pred_chloro_plast_C$Trait  <- "Chlorophyll A"
+pred_antho_plast_C$Trait   <- "Anthocyanin"
+
+pred_rootnum_plast_F$Trait <- "Root Number"
+pred_rootlen_plast_F$Trait <- "Root Length"
+pred_sla_plast_F$Trait     <- "SLA"
+pred_chloro_plast_F$Trait  <- "Chlorophyll A"
+pred_antho_plast_F$Trait   <- "Anthocyanin"
+
+pred_rootnum_plast_C$Environment <- "Constant"
+pred_rootlen_plast_C$Environment <- "Constant"
+pred_sla_plast_C$Environment     <- "Constant"
+pred_chloro_plast_C$Environment  <- "Constant"
+pred_antho_plast_C$Environment   <- "Constant"
+
+pred_rootnum_plast_F$Environment <- "Fluctuating"
+pred_rootlen_plast_F$Environment <- "Fluctuating"
+pred_sla_plast_F$Environment     <- "Fluctuating"
+pred_chloro_plast_F$Environment  <- "Fluctuating"
+pred_antho_plast_F$Environment   <- "Fluctuating"
+
+pred_plast <- bind_rows(
+  pred_rootnum_plast_C,
+  pred_rootlen_plast_C,
+  pred_sla_plast_C,
+  pred_chloro_plast_C,
+  pred_antho_plast_C,
+  pred_rootnum_plast_F,
+  pred_rootlen_plast_F,
+  pred_sla_plast_F,
+  pred_chloro_plast_F,
+  pred_antho_plast_F
+)
+
+pred_plast$Trait <- factor(
+  pred_plast$Trait,
+  levels = c(
+    "Root Length",
+    "Root Number",
+    "SLA",
+    "Chlorophyll A",
+    "Anthocyanin"
+  )
+)
+```
+
+```{r}
+# Plot it
+ggplot(
+  pred_plast,
+  aes(
+    x = x,
+    y = predicted,
+    linetype = Environment
+  )
+) +
+  geom_line(
+    color = "black",
+    linewidth = 1.2
+  ) +
+  facet_wrap(
+    ~Trait,
+    ncol = 1,
+    scales = "free_x"
+  ) +
+scale_y_continuous(
+  breaks = c(0.4, 0.5, 0.6, 0.7, 0.8),
+  limits = c(0.4, 0.8)
+) +
+  scale_linetype_manual(
+    values = c(
+      "Constant" = "solid",
+      "Fluctuating" = "dashed"
+    )
+  ) +
+  theme_classic() +
+  labs(
+    x = "Trait Plasticity",
+    y = "Predicted Final Frequency",
+    linetype = NULL
+  ) +
+  theme(
+    legend.position = "top",
+    panel.spacing.y = unit(1.2, "lines"),
+    strip.background = element_blank(),
+    strip.text = element_text(face = "bold")
+  )
+
+ggsave("Trait_Plast_MarginalEffects.pdf",width = 3,height = 6.5)
+```
+
+
+```{r}
+# Make large marginal effects plot - VALUES
+# Calculate trait ranges
+rootnum_range <- range(c(Evo_Trait_C$AVG_RootNumber,
+                         Evo_Trait_F$AVG_RootNumber),
+                       na.rm = TRUE)
+
+rootlen_range <- range(c(Evo_Trait_C$AVG_RootLength,
+                         Evo_Trait_F$AVG_RootLength),
+                       na.rm = TRUE)
+
+sla_range <- range(c(Evo_Trait_C$AVG_SLA,
+                     Evo_Trait_F$AVG_SLA),
+                   na.rm = TRUE)
+
+chloro_range <- range(c(Evo_Trait_C$AVG_Chloro,
+                        Evo_Trait_F$AVG_Chloro),
+                      na.rm = TRUE)
+
+antho_range <- range(c(Evo_Trait_C$AVG_Antho,
+                       Evo_Trait_F$AVG_Antho),
+                     na.rm = TRUE)
+
+# Predict using shared ranges
+# Constant
+pred_rootnum_C <- ggpredict(
+  model5,
+  terms = sprintf("AVG_RootNumber [%.2f:%.2f by=0.1]",
+                  rootnum_range[1], rootnum_range[2])
+)
+
+pred_rootlen_C <- ggpredict(
+  model5,
+  terms = sprintf("AVG_RootLength [%.2f:%.2f by=0.1]",
+                  rootlen_range[1], rootlen_range[2])
+)
+
+pred_sla_C <- ggpredict(
+  model5,
+  terms = sprintf("AVG_SLA [%.2f:%.2f by=0.1]",
+                  sla_range[1], sla_range[2])
+)
+
+pred_chloro_C <- ggpredict(
+  model5,
+  terms = sprintf("AVG_Chloro [%.2f:%.2f by=0.1]",
+                  chloro_range[1], chloro_range[2])
+)
+
+pred_antho_C <- ggpredict(
+  model5,
+  terms = sprintf("AVG_Antho [%.2f:%.2f by=0.1]",
+                  antho_range[1], antho_range[2])
+)
+
+# Fluctuating
+pred_rootnum_F <- ggpredict(
+  model6,
+  terms = sprintf("AVG_RootNumber [%.2f:%.2f by=0.1]",
+                  rootnum_range[1], rootnum_range[2])
+)
+
+pred_rootlen_F <- ggpredict(
+  model6,
+  terms = sprintf("AVG_RootLength [%.2f:%.2f by=0.1]",
+                  rootlen_range[1], rootlen_range[2])
+)
+
+pred_sla_F <- ggpredict(
+  model6,
+  terms = sprintf("AVG_SLA [%.2f:%.2f by=0.1]",
+                  sla_range[1], sla_range[2])
+)
+
+pred_chloro_F <- ggpredict(
+  model6,
+  terms = sprintf("AVG_Chloro [%.2f:%.2f by=0.1]",
+                  chloro_range[1], chloro_range[2])
+)
+
+pred_antho_F <- ggpredict(
+  model6,
+  terms = sprintf("AVG_Antho [%.2f:%.2f by=0.1]",
+                  antho_range[1], antho_range[2])
+)
+
+pred_rootnum_C$Trait <- "Root Number"
+pred_rootlen_C$Trait <- "Root Length"
+pred_sla_C$Trait <- "SLA"
+pred_chloro_C$Trait <- "Chlorophyll A"
+pred_antho_C$Trait <- "Anthocyanin"
+
+pred_rootnum_F$Trait <- "Root Number"
+pred_rootlen_F$Trait <- "Root Length"
+pred_sla_F$Trait <- "SLA"
+pred_chloro_F$Trait <- "Chlorophyll A"
+pred_antho_F$Trait <- "Anthocyanin"
+
+pred_rootnum_C$Environment <- "Constant"
+pred_rootlen_C$Environment <- "Constant"
+pred_sla_C$Environment <- "Constant"
+pred_chloro_C$Environment <- "Constant"
+pred_antho_C$Environment <- "Constant"
+
+pred_rootnum_F$Environment <- "Fluctuating"
+pred_rootlen_F$Environment <- "Fluctuating"
+pred_sla_F$Environment <- "Fluctuating"
+pred_chloro_F$Environment <- "Fluctuating"
+pred_antho_F$Environment <- "Fluctuating"
+
+pred_values <- bind_rows(
+  pred_rootnum_C,
+  pred_rootlen_C,
+  pred_sla_C,
+  pred_chloro_C,
+  pred_antho_C,
+  pred_rootnum_F,
+  pred_rootlen_F,
+  pred_sla_F,
+  pred_chloro_F,
+  pred_antho_F
+)
+
+pred_values$Trait <- factor(
+  pred_values$Trait,
+  levels = c(
+    "Root Length",
+    "Root Number",
+    "SLA",
+    "Chlorophyll A",
+    "Anthocyanin"
+  )
+)
+```
+
+```{r}
+# Plot it
+ggplot(
+  pred_values,
+  aes(
+    x = x,
+    y = predicted,
+    linetype = Environment
+  )
+) +
+  geom_line(
+    color = "black",
+    linewidth = 1.2
+  ) +
+  facet_wrap(
+    ~Trait,
+    ncol = 1,
+    scales = "free_x"
+  ) +
+  
+scale_y_continuous(
+  breaks = c(0.4, 0.5, 0.6, 0.7, 0.8),
+  limits = c(0.4, 0.8)
+) +
+  scale_linetype_manual(
+    values = c(
+      "Constant" = "solid",
+      "Fluctuating" = "dashed"
+    )
+  ) +
+  theme_classic() +
+  labs(
+    x = "Trait Value",
+    y = "Predicted Final Frequency",
+    linetype = NULL
+  ) +
+  theme(
+    legend.position = "top",
+    panel.spacing.y = unit(1.2, "lines"),
+    strip.background = element_blank(),
+    strip.text = element_text(face = "bold")
+  )
+
+ggsave("Trait_Value_MarginalEffects.pdf",width = 3,height = 6.5)
+```
+
+```{r}
+# With CIs but it is super busy so using other version for now
+ggplot(
+  pred_values,
+  aes(
+    x = x,
+    y = predicted,
+    linetype = Environment,
+    fill = Environment
+  )
+) +
+
+  geom_ribbon(
+    aes(
+      ymin = conf.low,
+      ymax = conf.high
+    ),
+    alpha = 0.15,
+    color = "black",
+    linewidth = 0.2
+  ) +
+
+  geom_line(
+    color = "black",
+    linewidth = 1.2
+  ) +
+
+  facet_wrap(
+    ~Trait,
+    ncol = 1,
+    scales = "free_x"
+  ) +
+
+  scale_fill_manual(
+    values = c(
+      "Constant" = "grey70",
+      "Fluctuating" = "grey90"
+    )
+  ) +
+
+  scale_linetype_manual(
+    values = c(
+      "Constant" = "solid",
+      "Fluctuating" = "dashed"
+    )
+  ) +
+
+  theme_classic() +
+
+  labs(
+    x = "Trait Value",
+    y = "Predicted Final Frequency",
+    linetype = NULL,
+    fill = NULL
+  ) +
+
+  theme(
+    legend.position = "top",
+    panel.spacing.y = unit(1.2, "lines"),
+    strip.background = element_blank(),
+    strip.text = element_text(face = "bold")
+  )
+
+#ggsave("Trait_ValueB_MarginalEffects.pdf",width = 4,height = 8)
+```
+
+```{r}
+rm(
+  pred_rootnum_C,
+  pred_rootlen_C,
+  pred_sla_C,
+  pred_chloro_C,
+  pred_antho_C,
+  pred_rootnum_F,
+  pred_rootlen_F,
+  pred_sla_F,
+  pred_chloro_F,
+  pred_antho_F,
+  pred_rootnum_plast_C,
+  pred_rootlen_plast_C,
+  pred_sla_plast_C,
+  pred_chloro_plast_C,
+  pred_antho_plast_C,
+  pred_rootnum_plast_F,
+  pred_rootlen_plast_F,
+  pred_sla_plast_F,
+  pred_chloro_plast_F,
+  pred_antho_plast_F
+)
+```
+
+
+```{r}
+### Average Change in Final Frequency predicted by Difference in Composite Plasticity
+#Dropped + (1|GenoPair) from models as they showed near 0 variance and to align with previous models
+
+Pair_Diff_C <- Evo_Trait_C %>%
+  group_by(GenoPair) %>%
+  summarise(Freq.Change = mean(abs(Freq.Change)),Pairwise_Diff_Mean_Plast_Dist_C = mean(Pairwise_Diff_Mean_Plast_Dist_C), Pairwise_Diff_Mean_Value_Dist_C = mean(abs(Trait_Dist)),.groups = "drop")
+
+Pair_Diff_F <- Evo_Trait_F %>%
+  group_by(GenoPair) %>%
+  summarise(Freq.Change = mean(abs(Freq.Change)),Pairwise_Diff_Mean_Plast_Dist_F = mean(Pairwise_Diff_Mean_Plast_Dist_F),Pairwise_Diff_Mean_Value_Dist_F = mean(abs(Trait_Dist)),.groups = "drop")
+
+# Constant Media
+model7 <- glmmTMB(Freq.Change ~ Pairwise_Diff_Mean_Plast_Dist_C + Pairwise_Diff_Mean_Value_Dist_C,data = Pair_Diff_C, family = gaussian())
+summary(model7)
+
+# Fluctuating Media
+model8 <- glmmTMB(Freq.Change ~ Pairwise_Diff_Mean_Plast_Dist_F + Pairwise_Diff_Mean_Value_Dist_F,data = Pair_Diff_F, family = gaussian())
+summary(model8)
+```
+
+```{r}
+model7_model8 <- bind_rows(Pair_Diff_C %>%
+    mutate(Environment="C",Plast_Diff=Pairwise_Diff_Mean_Plast_Dist_C,Value_Diff=Pairwise_Diff_Mean_Value_Dist_C) %>%
+    select(-Pairwise_Diff_Mean_Plast_Dist_C,-Pairwise_Diff_Mean_Value_Dist_C),Pair_Diff_F %>%
+    mutate(Environment="F",Plast_Diff=Pairwise_Diff_Mean_Plast_Dist_F,Value_Diff=Pairwise_Diff_Mean_Value_Dist_F) %>%
+    select(-Pairwise_Diff_Mean_Plast_Dist_F,-Pairwise_Diff_Mean_Value_Dist_F))
+
+FreqDiff_PlastDiff_Plot <- ggplot(model7_model8, aes(x = Plast_Diff, y = Freq.Change)) +
+  geom_point(aes(fill = Environment), shape = 21,color = "black", size = 2.5, stroke=1.2) +
+  geom_smooth(aes(linetype = Environment),method = "lm",se = FALSE,linewidth = 1.2,fullrange = FALSE, color="black") +
+  scale_fill_manual(values = c("C" = "black", "F" = "white")) +
+  coord_cartesian(ylim = c(0, NA)) + 
+  scale_x_continuous(breaks = c(0.25, 0.50, 0.75, 1.00, 1.25)) +
+  scale_linetype_manual(values = c("C" = "solid","F" = "dashed")) +
+  theme_classic() +
+  labs(x = "Pairwise Plasticity Difference",y = "Absolute Frequency Change") +
+  theme(panel.border=element_blank(), panel.grid.major=element_blank(), panel.grid.minor=element_blank(), axis.line=element_line(colour="black"), panel.background=element_blank(), axis.text.x=element_text(color="black"), axis.text.y=element_text(color="black"))
+plot(FreqDiff_PlastDiff_Plot)
+#ggsave("FreqDiff_PlastDiff_Plot.pdf")
+
+FreqDiff_ValueDiff_Plot <- ggplot(model7_model8, aes(x = Value_Diff, y = Freq.Change)) +
+  geom_point(aes(fill = Environment), shape = 21,color = "black", size = 2.5, stroke=1.2) +
+  geom_smooth(aes(linetype = Environment),method = "lm",se = FALSE,linewidth = 1.2,fullrange = FALSE, color="black") +
+  scale_fill_manual(values = c("C" = "black", "F" = "white")) +
+  coord_cartesian(ylim = c(0, NA)) + 
+  scale_x_continuous(breaks = c(1.00, 1.25, 1.50, 1.75, 2.00)) +
+  scale_linetype_manual(values = c("C" = "solid","F" = "dashed")) +
+  theme_classic() +
+  labs(x = "Pairwise Trait Value Difference",y = "Absolute Frequency Change") +
+  theme(panel.border=element_blank(), panel.grid.major=element_blank(), panel.grid.minor=element_blank(), axis.line=element_line(colour="black"), panel.background=element_blank(), axis.text.x=element_text(color="black"), axis.text.y=element_text(color="black"))
+plot(FreqDiff_ValueDiff_Plot)
+#ggsave("FreqDiff_ValueDiff_Plot.pdf")
+```
+
